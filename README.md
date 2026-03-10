@@ -38,6 +38,22 @@ npm run build
 
 Open [http://localhost:5173](http://localhost:5173)
 
+## ⌨️ Keyboard Shortcuts
+
+Navigate faster with these global shortcuts:
+
+| Key | Action | Context |
+| :--- | :--- | :--- |
+| `Space` / `→` | **Spin** (Next Random Article) | Home |
+| `←` | **Previous** Article | Home |
+| `R` | **Read** Current Article | Home |
+| `Backspace` | **Go Back** | Reader |
+| `Esc` | **Exit Fullscreen** or **Go Back** | Reader |
+| `F` | Toggle **Fullscreen** Mode | Reader |
+| `M` | Toggle **Markdown/HTML** View | Reader |
+| `D` | **Download** Markdown (Obsidian) | Reader |
+| `F1` or `Shift` + `?` | Show **Shortcuts Menu** | Global |
+
 ## Project structure
 
 ```
