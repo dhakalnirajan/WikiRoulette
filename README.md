@@ -4,13 +4,13 @@ A beautiful Wikipedia random article explorer built with Vue 3 + TypeScript + Vi
 
 ## Features
 
-- 🎲 **Spin** through random Wikipedia articles
-- 📖 **Full in-page reader** — complete article rendered beautifully, never leaving the app
-- 🔗 **Clickable wiki links** — navigate between articles inside the reader
-- 📋 **Table of contents** — sticky sidebar with active section highlighting
-- ⬅️ **History navigation** — go back and forward through visited articles
-- ⌨️ **Keyboard shortcuts** — `←` prev, `→`/`Space` next, `R` read, `Esc` back
-- 🎨 **Dark editorial design** — Libre Baskerville serif, grain texture, amber accent
+- **Spin** through random Wikipedia articles
+- **Full in-page reader** — complete article rendered beautifully, never leaving the app
+- **Clickable wiki links** — navigate between articles inside the reader
+- **Table of contents** — sticky sidebar with active section highlighting
+- **History navigation** — go back and forward through visited articles
+- **Keyboard shortcuts** — `←` prev, `→`/`Space` next, `R` read, `Esc` back
+- **Dark editorial design** — Libre Baskerville serif, grain texture, amber accent
 
 ## Tech stack
 
@@ -38,7 +38,7 @@ npm run build
 
 Open [http://localhost:5173](http://localhost:5173)
 
-## ⌨️ Keyboard Shortcuts
+## Keyboard Shortcuts
 
 Navigate faster with these global shortcuts:
 

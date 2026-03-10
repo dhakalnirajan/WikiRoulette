@@ -7,29 +7,25 @@ import { fetchSummaryByTitle } from "@/composables/useWikiApi";
 import { useHistory } from "@/composables/useHistory";
 import type { WikiSummary } from "@/types/wiki";
 
-type View = "home" | "reader";
-
-const view = ref<View>("home");
+const view = ref<"home" | "reader">("home");
 const readerSummary = ref<WikiSummary | null>(null);
 const homeRef = ref<InstanceType<typeof HomeView> | null>(null);
 
 const { current, totalCount } = useHistory();
 
-function goHome() {
+const goHome = () => {
   view.value = "home";
-}
+};
 
-function openReader(summary: WikiSummary) {
-  readerSummary.value = summary;
+const openReader = (s: WikiSummary) => {
+  readerSummary.value = s;
   view.value = "reader";
-}
+};
 
-async function navigateToArticle(title: string) {
+const navigateToArticle = async (title: string) => {
   try {
-    const summary = await fetchSummaryByTitle(title);
-    openReader(summary);
+    openReader(await fetchSummaryByTitle(title));
   } catch {
-    // Fallback
     openReader({
       title,
       displaytitle: title,
@@ -56,16 +52,15 @@ async function navigateToArticle(title: string) {
       timestamp: "",
     } as WikiSummary);
   }
-}
+};
 
-function handleKeydown(e: KeyboardEvent) {
-  const tag = (e.target as HTMLElement).tagName;
-  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+const handleKeydown = (e: KeyboardEvent) => {
+  if (
+    ["INPUT", "TEXTAREA", "SELECT"].includes((e.target as HTMLElement).tagName)
+  )
+    return;
 
-  // Global Shortcuts (F1 / Shift+?)
   if (e.key === "F1" || (e.key === "?" && e.shiftKey)) {
-    // If in reader, let the reader handle it, otherwise ignore or show global help if you had one
-    // Currently Reader handles its own modal, so we let it bubble if view is reader
     if (view.value === "reader") return;
   }
 
@@ -74,21 +69,11 @@ function handleKeydown(e: KeyboardEvent) {
       e.preventDefault();
       homeRef.value?.spin();
     }
-    if (e.key === "ArrowLeft") {
-      e.preventDefault();
-      // Handled inside HomeView mostly, but could trigger prev here if needed
-    }
     if ((e.key === "r" || e.key === "R") && current.value) {
       openReader(current.value.summary);
     }
   }
-
-  if (view.value === "reader") {
-    // Let ArticleReader handle most keys, but we can intercept global 'Esc' if needed
-    // However, ArticleReader now handles Esc for fullscreen/back internally.
-    // We just ensure we don't double-trigger.
-  }
-}
+};
 
 onMounted(() => {
   document.addEventListener("keydown", handleKeydown);
@@ -107,11 +92,10 @@ onUnmounted(() => {
       :total-visited="totalCount"
       @go-home="goHome"
     />
-
     <Transition name="fade" mode="out-in">
       <HomeView v-if="view === 'home'" ref="homeRef" @read="openReader" />
       <ArticleReader
-        v-else-if="view === 'reader' && readerSummary"
+        v-else-if="readerSummary"
         :summary="readerSummary"
         @back="goHome"
         @navigate="navigateToArticle"

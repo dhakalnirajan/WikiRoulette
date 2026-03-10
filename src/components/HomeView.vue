@@ -3,7 +3,6 @@ import { ref, computed } from "vue";
 import ArticleCard from "./ArticleCard.vue";
 import SkeletonCard from "./SkeletonCard.vue";
 import SpinControls from "./SpinControls.vue";
-// Now we use both functions
 import {
   fetchRandomSummary,
   fetchSummaryByTitle,
@@ -11,20 +10,17 @@ import {
 import { useHistory } from "@/composables/useHistory";
 import type { WikiSummary } from "@/types/wiki";
 
-const emit = defineEmits<{
-  (e: "read", summary: WikiSummary): void;
-}>();
+const emit = defineEmits<{ (e: "read", summary: WikiSummary): void }>();
 
 const { current, canGoBack, push, goBack, totalCount } = useHistory();
 
 const loading = ref(false);
 const errorMsg = ref("");
-const jumpTitle = ref(""); // State for manual title input
+const jumpTitle = ref("");
 const jumpLoading = ref(false);
 
 const hasSummary = computed(() => current.value !== null);
 
-// Direction for slide animation
 const slideDir = ref<"right" | "left">("right");
 const transitionName = computed(() =>
   slideDir.value === "right" ? "slide-right" : "slide-left",
@@ -45,7 +41,6 @@ async function spin() {
   }
 }
 
-// NEW: Function to fetch a specific article by title using fetchSummaryByTitle
 async function jumpToArticle() {
   const title = jumpTitle.value.trim();
   if (!title) return;
@@ -56,10 +51,9 @@ async function jumpToArticle() {
   slideDir.value = "right";
 
   try {
-    // Using the previously unused import here
     const data = await fetchSummaryByTitle(title);
     push(data);
-    jumpTitle.value = ""; // Clear input on success
+    jumpTitle.value = "";
   } catch (e) {
     errorMsg.value =
       e instanceof Error ? `Article "${title}" not found.` : "Failed to fetch";
@@ -74,14 +68,12 @@ function prev() {
   goBack();
 }
 
-// Expose so App.vue can call spin on mount
 defineExpose({ spin, totalCount });
 </script>
 
 <template>
   <div class="home">
     <div class="home-inner">
-      <!-- Search / Jump Input -->
       <div class="jump-container">
         <input
           v-model="jumpTitle"
@@ -100,18 +92,14 @@ defineExpose({ spin, totalCount });
         </button>
       </div>
 
-      <!-- Card area -->
       <div class="card-area">
-        <!-- Loading skeleton -->
         <SkeletonCard v-if="loading || jumpLoading" />
 
-        <!-- Error -->
         <div v-else-if="errorMsg" class="error-card">
           <p>{{ errorMsg }}</p>
           <button class="retry-btn" @click="spin">Try Random Instead</button>
         </div>
 
-        <!-- Article card with slide transition -->
         <Transition :name="transitionName" mode="out-in" v-else-if="hasSummary">
           <ArticleCard
             :key="current!.summary.pageid"
@@ -120,7 +108,6 @@ defineExpose({ spin, totalCount });
           />
         </Transition>
 
-        <!-- Empty state (first load before spin) -->
         <div v-else class="empty-state">
           <p>
             Hit <strong>Spin</strong> to discover a random Wikipedia article.
@@ -128,7 +115,6 @@ defineExpose({ spin, totalCount });
         </div>
       </div>
 
-      <!-- Controls -->
       <SpinControls
         :can-go-back="canGoBack"
         :loading="loading || jumpLoading"
@@ -137,16 +123,10 @@ defineExpose({ spin, totalCount });
         @next="spin"
       />
 
-      <!-- Keyboard hint -->
       <div class="kbd-hint" aria-label="Keyboard shortcuts">
-        <kbd>←</kbd>
-        <span>Previous</span>
-        <span class="sep">·</span>
-        <kbd>Space</kbd> / <kbd>→</kbd>
-        <span>Next</span>
-        <span class="sep">·</span>
-        <kbd>R</kbd>
-        <span>Read</span>
+        <kbd>←</kbd><span>Previous</span><span class="sep">·</span>
+        <kbd>Space</kbd> / <kbd>→</kbd><span>Next</span
+        ><span class="sep">·</span> <kbd>R</kbd><span>Read</span>
       </div>
     </div>
   </div>
@@ -162,7 +142,6 @@ defineExpose({ spin, totalCount });
   position: relative;
   z-index: 1;
 }
-
 .home-inner {
   width: 100%;
   max-width: 840px;
@@ -170,17 +149,14 @@ defineExpose({ spin, totalCount });
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1.5rem; /* Increased gap for the new input */
+  gap: 1.5rem;
 }
-
-/* New Jump Input Styles */
 .jump-container {
   display: flex;
   gap: 0.5rem;
   width: 100%;
   max-width: 500px;
 }
-
 .jump-input {
   flex: 1;
   background: var(--surface2);
@@ -195,16 +171,13 @@ defineExpose({ spin, totalCount });
     border-color 0.2s,
     box-shadow 0.2s;
 }
-
 .jump-input:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-glow);
 }
-
 .jump-input::placeholder {
   color: var(--text-muted);
 }
-
 .jump-btn {
   background: var(--surface2);
   border: 1px solid var(--border);
@@ -218,18 +191,15 @@ defineExpose({ spin, totalCount });
   cursor: pointer;
   transition: all 0.2s;
 }
-
 .jump-btn:hover:not(:disabled) {
   background: var(--accent);
   color: #000;
   border-color: var(--accent);
 }
-
 .jump-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
-
 .card-area {
   width: 100%;
   min-height: 420px;
@@ -237,7 +207,6 @@ defineExpose({ spin, totalCount });
   align-items: flex-start;
   justify-content: center;
 }
-
 .error-card {
   width: 100%;
   max-width: 800px;
@@ -254,7 +223,6 @@ defineExpose({ spin, totalCount });
   align-items: center;
   gap: 1rem;
 }
-
 .retry-btn {
   font-family: var(--font-mono);
   font-size: 0.72rem;
@@ -268,11 +236,9 @@ defineExpose({ spin, totalCount });
   border-radius: var(--radius);
   transition: all 0.15s;
 }
-
 .retry-btn:hover {
   background: var(--accent-dim);
 }
-
 .empty-state {
   width: 100%;
   max-width: 800px;
@@ -287,12 +253,10 @@ defineExpose({ spin, totalCount });
   text-align: center;
   padding: 2rem;
 }
-
 .empty-state strong {
   color: var(--accent);
   font-style: normal;
 }
-
 .kbd-hint {
   display: flex;
   align-items: center;
@@ -305,7 +269,6 @@ defineExpose({ spin, totalCount });
   flex-wrap: wrap;
   justify-content: center;
 }
-
 kbd {
   background: var(--surface2);
   border: 1px solid var(--border2);
@@ -315,12 +278,10 @@ kbd {
   font-size: 0.62rem;
   color: var(--text-dim);
 }
-
 .sep {
   color: var(--text-faint);
   margin: 0 0.1rem;
 }
-
 @media (max-width: 640px) {
   .jump-container {
     flex-direction: column;

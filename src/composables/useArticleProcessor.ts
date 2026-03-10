@@ -49,14 +49,12 @@ export function processArticleHTML(
   const doc = parser.parseFromString(rawHtml, "text/html");
   const body = doc.body || doc.documentElement;
 
-  // Remove unwanted elements
   REMOVE_SELECTORS.forEach((sel) => {
     try {
       body.querySelectorAll(sel).forEach((el) => el.remove());
     } catch (_) {}
   });
 
-  // Fix images
   body.querySelectorAll("img").forEach((img) => {
     const src = fixImageSrc(img.getAttribute("src") || "");
     img.setAttribute("src", src);
@@ -66,27 +64,23 @@ export function processArticleHTML(
     const srcset = img.getAttribute("srcset");
     if (srcset) img.setAttribute("srcset", srcset.replace(/\/\//g, "https://"));
 
-    // Remove tiny decoration icons
     const w = parseInt(img.getAttribute("width") || "999");
     if (w < 22) {
       img.closest("figure, .thumb, span")?.remove() ?? img.remove();
     }
   });
 
-  // Fix audio/video sources
   body.querySelectorAll("source[src]").forEach((s) => {
     const src = fixImageSrc(s.getAttribute("src") || "");
     s.setAttribute("src", src);
   });
 
-  // Process links: intercept wiki links, fix external
   body.querySelectorAll("a[href]").forEach((a) => {
     const href = a.getAttribute("href") || "";
     if (!href || href.startsWith("#")) return;
 
     const wikiTitle = hrefToTitle(href);
     if (wikiTitle) {
-      // Skip special pages, files, categories, etc.
       if (
         /^(Special:|File:|Category:|Help:|Wikipedia:|Template:|Portal:|Talk:)/i.test(
           wikiTitle,
@@ -108,7 +102,6 @@ export function processArticleHTML(
     }
   });
 
-  // Extract main content
   const mainContent =
     body.querySelector(".mw-parser-output") ||
     body.querySelector('[id="mw-content-text"]') ||
@@ -116,10 +109,8 @@ export function processArticleHTML(
     body.querySelector("section") ||
     body;
 
-  // Remove existing H1 (we render our own title)
   mainContent.querySelectorAll("h1").forEach((h) => h.remove());
 
-  // Build TOC from headings
   const toc: TocItem[] = [];
   const headings = mainContent.querySelectorAll<HTMLElement>("h2, h3, h4");
   headings.forEach((h, i) => {

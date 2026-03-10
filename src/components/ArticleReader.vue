@@ -8,9 +8,7 @@ import {
 import { processArticleHTML } from "@/composables/useArticleProcessor";
 import type { WikiSummary, TocItem } from "@/types/wiki";
 
-const props = defineProps<{
-  summary: WikiSummary;
-}>();
+const props = defineProps<{ summary: WikiSummary }>();
 
 const emit = defineEmits<{
   (e: "back"): void;
@@ -23,7 +21,7 @@ const toc = ref<TocItem[]>([]);
 const errorMsg = ref("");
 const articleRef = ref<HTMLElement | null>(null);
 
-// New State
+// Feature states
 const isFullscreen = ref(false);
 const viewMode = ref<"html" | "markdown">("html");
 const showShortcuts = ref(false);
@@ -49,7 +47,6 @@ async function load(summary: WikiSummary) {
     processedHtml.value = result.html;
     toc.value = result.toc;
 
-    // Pre-generate Markdown
     markdownContent.value = htmlToObsidianMarkdown(
       result.html,
       summary.title,
@@ -94,8 +91,6 @@ watch(
   { immediate: true },
 );
 
-// --- Actions ---
-
 function toggleFullscreen() {
   if (!document.fullscreenElement) {
     document.documentElement.requestFullscreen().catch(() => {});
@@ -117,7 +112,6 @@ function downloadMarkdown() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  // Sanitize filename
   const safeTitle = props.summary.title.replace(/[/\\?%*:|"<>]/g, "-");
   a.download = `${safeTitle}.md`;
   document.body.appendChild(a);
@@ -130,56 +124,45 @@ function toggleShortcuts() {
   showShortcuts.value = !showShortcuts.value;
 }
 
-// --- Keyboard Handling ---
-
 function handleKeydown(e: KeyboardEvent) {
-  // Ignore if typing in an input
   const tag = (e.target as HTMLElement).tagName;
   if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
 
-  // Shortcuts Menu
   if (e.key === "F1" || (e.key === "?" && e.shiftKey)) {
     e.preventDefault();
     toggleShortcuts();
     return;
   }
 
-  // Close Shortcuts
   if (showShortcuts.value && e.key === "Escape") {
     showShortcuts.value = false;
     return;
   }
 
-  // Back Navigation (Backspace)
   if (e.key === "Backspace") {
     e.preventDefault();
     emit("back");
     return;
   }
 
-  // Exit Fullscreen (Escape) - only if in fullscreen
   if (e.key === "Escape" && isFullscreen.value) {
     toggleFullscreen();
     return;
   }
 
-  // Standard Escape to go back (if not in fullscreen)
   if (e.key === "Escape" && !isFullscreen.value && !showShortcuts.value) {
     emit("back");
     return;
   }
 
-  // View Mode Toggle (M)
   if (e.key.toLowerCase() === "m") {
     toggleViewMode();
   }
 
-  // Fullscreen Toggle (F)
   if (e.key.toLowerCase() === "f") {
     toggleFullscreen();
   }
 
-  // Download (D)
   if (e.key.toLowerCase() === "d" && !e.ctrlKey && !e.metaKey) {
     downloadMarkdown();
   }
@@ -187,8 +170,6 @@ function handleKeydown(e: KeyboardEvent) {
 
 onMounted(() => {
   document.addEventListener("keydown", handleKeydown);
-
-  // Listen to fullscreen changes via browser API (e.g. user presses Esc directly)
   document.addEventListener("fullscreenchange", () => {
     isFullscreen.value = !!document.fullscreenElement;
   });
@@ -198,7 +179,6 @@ onUnmounted(() => {
   document.removeEventListener("keydown", handleKeydown);
 });
 
-// Copy URL
 const copied = ref(false);
 async function copyUrl() {
   try {
@@ -211,7 +191,6 @@ async function copyUrl() {
 
 <template>
   <div class="reader" :class="{ 'fullscreen-active': isFullscreen }">
-    <!-- Reader top bar -->
     <div class="reader-bar">
       <button
         class="back-btn"
@@ -236,7 +215,6 @@ async function copyUrl() {
       </div>
 
       <div class="reader-bar-actions">
-        <!-- View Mode Toggle -->
         <button
           class="bar-btn"
           @click="toggleViewMode"
@@ -247,7 +225,6 @@ async function copyUrl() {
           <span v-else>HTML</span>
         </button>
 
-        <!-- Download -->
         <button
           class="bar-btn"
           @click="downloadMarkdown"
@@ -268,7 +245,6 @@ async function copyUrl() {
           <span class="hide-mobile">Export</span>
         </button>
 
-        <!-- Fullscreen -->
         <button
           class="bar-btn"
           @click="toggleFullscreen"
@@ -303,7 +279,6 @@ async function copyUrl() {
           </svg>
         </button>
 
-        <!-- Copy -->
         <button
           class="bar-btn"
           :class="{ copied }"
@@ -336,7 +311,6 @@ async function copyUrl() {
           </svg>
         </button>
 
-        <!-- Help -->
         <button
           class="bar-btn help-btn"
           @click="toggleShortcuts"
@@ -347,15 +321,12 @@ async function copyUrl() {
       </div>
     </div>
 
-    <!-- Content -->
     <div class="reader-body">
-      <!-- Loading -->
       <div v-if="state === 'loading'" class="reader-loading">
         <div class="spinner"></div>
         <p>Loading "{{ summary.title }}"…</p>
       </div>
 
-      <!-- Error -->
       <div v-else-if="state === 'error'" class="reader-error">
         <p class="error-headline">Could not load this article.</p>
         <p class="error-detail">{{ errorMsg }}</p>
@@ -369,12 +340,11 @@ async function copyUrl() {
         </a>
       </div>
 
-      <!-- Article -->
       <div v-else class="reader-layout">
+        <!-- TOC Sidebar on LEFT -->
         <TocSidebar :items="toc" />
 
         <article class="reader-article" ref="articleRef">
-          <!-- Hero Section (Only in HTML mode) -->
           <div v-if="viewMode === 'html'" class="article-hero">
             <div class="article-hero-label">
               <span class="hero-line" aria-hidden="true"></span>
@@ -389,7 +359,6 @@ async function copyUrl() {
             </p>
           </div>
 
-          <!-- Content Display -->
           <div
             v-if="viewMode === 'html'"
             class="wiki-content"
@@ -402,7 +371,6 @@ async function copyUrl() {
       </div>
     </div>
 
-    <!-- Shortcuts Modal -->
     <Transition name="fade">
       <div
         v-if="showShortcuts"
@@ -417,27 +385,27 @@ async function copyUrl() {
             </button>
           </div>
           <div class="shortcuts-grid">
-            <div class="shortcut-item"><kbd>←</kbd> <span>Go Back</span></div>
+            <div class="shortcut-item"><kbd>←</kbd><span>Go Back</span></div>
             <div class="shortcut-item">
-              <kbd>Backspace</kbd> <span>Go Back</span>
+              <kbd>Backspace</kbd><span>Go Back</span>
             </div>
             <div class="shortcut-item">
-              <kbd>Esc</kbd> <span>Exit Fullscreen / Back</span>
+              <kbd>Esc</kbd><span>Exit Fullscreen / Back</span>
             </div>
             <div class="shortcut-item">
-              <kbd>F</kbd> <span>Toggle Fullscreen</span>
+              <kbd>F</kbd><span>Toggle Fullscreen</span>
             </div>
             <div class="shortcut-item">
-              <kbd>M</kbd> <span>Toggle Markdown/HTML</span>
+              <kbd>M</kbd><span>Toggle Markdown/HTML</span>
             </div>
             <div class="shortcut-item">
-              <kbd>D</kbd> <span>Download Markdown</span>
+              <kbd>D</kbd><span>Download Markdown</span>
             </div>
             <div class="shortcut-item">
-              <kbd>F1</kbd> <span>Show Shortcuts</span>
+              <kbd>F1</kbd><span>Show Shortcuts</span>
             </div>
             <div class="shortcut-item">
-              <kbd>Shift + ?</kbd> <span>Show Shortcuts</span>
+              <kbd>Shift + ?</kbd><span>Show Shortcuts</span>
             </div>
           </div>
           <p class="shortcuts-footer">Press <kbd>Esc</kbd> to close</p>
@@ -454,7 +422,6 @@ async function copyUrl() {
   transition: background-color 0.3s;
 }
 
-/* Fullscreen adjustments */
 .fullscreen-active .reader-bar {
   top: 0;
   position: fixed;
@@ -465,7 +432,6 @@ async function copyUrl() {
   padding-top: var(--reader-bar-h);
 }
 
-/* ── Reader bar ── */
 .reader-bar {
   position: sticky;
   top: var(--nav-h);
@@ -570,7 +536,6 @@ async function copyUrl() {
   }
 }
 
-/* ── Body ── */
 .reader-body {
   max-width: 1140px;
   margin: 0 auto;
@@ -578,7 +543,7 @@ async function copyUrl() {
 }
 .reader-layout {
   display: flex;
-  gap: 4rem;
+  gap: 3rem;
   align-items: flex-start;
 }
 .reader-article {
@@ -586,7 +551,6 @@ async function copyUrl() {
   min-width: 0;
 }
 
-/* Markdown View Styles */
 .markdown-content {
   font-family: var(--font-mono);
   font-size: 0.85rem;
@@ -605,7 +569,6 @@ async function copyUrl() {
   font-family: inherit;
 }
 
-/* Hero Styles (HTML only) */
 .article-hero {
   margin-bottom: 2.5rem;
 }
@@ -645,7 +608,6 @@ async function copyUrl() {
   margin-top: 0.3rem;
 }
 
-/* Loading / Error */
 .reader-loading,
 .reader-error {
   display: flex;
@@ -680,7 +642,6 @@ async function copyUrl() {
   border-color: var(--accent);
 }
 
-/* Shortcuts Modal */
 .shortcuts-modal {
   position: fixed;
   inset: 0;
