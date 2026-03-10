@@ -1,38 +1,33 @@
 import type { WikiSummary } from "@/types/wiki";
 
-// FIXED: Removed trailing spaces from all URL constants
-const BASE = "https://en.wikipedia.org/api/rest_v1";
-const API = "https://en.wikipedia.org/w/api.php";
+// Wikipedia REST API Base URLs (NO trailing spaces)
+const BASE_REST = "https://en.wikipedia.org/api/rest_v1";
+const BASE_ACTION = "https://en.wikipedia.org/w/api.php";
 
-/**
- * Fetch a random article summary from the Wikipedia REST API
- */
+// ============================================================================
+// SUMMARY & ARTICLE FETCHING (REST API - Primary)
+// ============================================================================
+
 export async function fetchRandomSummary(): Promise<WikiSummary> {
-  const res = await fetch(`${BASE}/page/random/summary`, {
+  const res = await fetch(`${BASE_REST}/page/random/summary`, {
     headers: { Accept: "application/json" },
   });
   if (!res.ok) throw new Error(`Random summary failed: ${res.status}`);
   return res.json() as Promise<WikiSummary>;
 }
 
-/**
- * Fetch summary for a specific article title
- */
 export async function fetchSummaryByTitle(title: string): Promise<WikiSummary> {
   const slug = encodeURIComponent(title.replace(/ /g, "_"));
-  const res = await fetch(`${BASE}/page/summary/${slug}`, {
+  const res = await fetch(`${BASE_REST}/page/summary/${slug}`, {
     headers: { Accept: "application/json" },
   });
   if (!res.ok) throw new Error(`Summary fetch failed: ${res.status}`);
   return res.json() as Promise<WikiSummary>;
 }
 
-/**
- * Fetch full parsed article HTML via the Wikipedia Parsoid REST API
- */
 export async function fetchArticleHTML(title: string): Promise<string> {
   const slug = encodeURIComponent(title.replace(/ /g, "_"));
-  const res = await fetch(`${BASE}/page/html/${slug}`, {
+  const res = await fetch(`${BASE_REST}/page/html/${slug}`, {
     headers: {
       Accept:
         'text/html; charset=utf-8; profile="https://www.mediawiki.org/wiki/Specs/HTML/2.8.0"',
@@ -42,9 +37,87 @@ export async function fetchArticleHTML(title: string): Promise<string> {
   return res.text();
 }
 
+export async function fetchMobileArticleHTML(title: string): Promise<string> {
+  const slug = encodeURIComponent(title.replace(/ /g, "_"));
+  const res = await fetch(`${BASE_REST}/page/mobile-html/${slug}`, {
+    headers: {
+      Accept:
+        'text/html; charset=utf-8; profile="https://www.mediawiki.org/wiki/Specs/Mobile-HTML/1.0.0"',
+    },
+  });
+  if (!res.ok) throw new Error(`Failed to fetch mobile article: ${res.status}`);
+  return res.text();
+}
+
+// ============================================================================
+// MEDIA & REFERENCES (Action API - Supplemental)
+// ============================================================================
+
 /**
- * Fetch article sections/outline using the MediaWiki Action API
+ * Fetch list of all media files used in an article
+ * NOTE: This endpoint returns 404 for many articles - handle gracefully
  */
+export async function fetchArticleMedia(title: string): Promise<
+  Array<{
+    title: string;
+    section_id: number;
+    srcset?: string;
+    thumbnail?: {
+      source: string;
+      width: number;
+      height: number;
+    };
+  }>
+> {
+  // Clean title: remove section anchors (#Section) or fragment identifiers (:1)
+  const cleanTitle = title.split("#")[0].split(":")[0].trim();
+  const slug = encodeURIComponent(cleanTitle.replace(/ /g, "_"));
+
+  try {
+    const res = await fetch(`${BASE_REST}/page/media-list/${slug}`);
+
+    // Handle 404 gracefully - not all articles have media lists
+    if (res.status === 404) {
+      return [];
+    }
+
+    if (!res.ok) throw new Error(`Media fetch failed: ${res.status}`);
+
+    const data = await res.json();
+    return data.items ?? [];
+  } catch (error) {
+    // Silently fail - media is optional enrichment
+    console.warn(`Media fetch failed for "${title}":`, error);
+    return [];
+  }
+}
+
+export async function fetchArticleReferences(title: string): Promise<
+  Array<{
+    id: string;
+    content: string;
+    backlinks: string[];
+  }>
+> {
+  const params = new URLSearchParams({
+    action: "parse",
+    page: title,
+    prop: "references",
+    format: "json",
+    origin: "*",
+  });
+  const res = await fetch(`${BASE_ACTION}?${params}`);
+  if (!res.ok) throw new Error(`References fetch failed: ${res.status}`);
+  const data = await res.json();
+  return (
+    data?.parse?.references?.map((ref: any, i: number) => ({
+      id: `ref-${i}`,
+      content: ref.content?.["*"] || "",
+      backlinks: ref.backlinks || [],
+    })) ?? []
+  );
+}
+
 export async function fetchArticleSections(
   title: string,
 ): Promise<
@@ -57,15 +130,16 @@ export async function fetchArticleSections(
     format: "json",
     origin: "*",
   });
-  const res = await fetch(`${API}?${params}`);
+  const res = await fetch(`${BASE_ACTION}?${params}`);
   if (!res.ok) throw new Error(`Sections fetch failed: ${res.status}`);
   const data = await res.json();
   return data?.parse?.sections ?? [];
 }
 
-/**
- * Resolve a relative Wikipedia URL to an article title
- */
+// ============================================================================
+// UTILITIES - FIXED
+// ============================================================================
+
 export function hrefToTitle(href: string): string | null {
   if (href.startsWith("./"))
     return decodeURIComponent(href.slice(2).split("#")[0]).replace(/_/g, " ");
@@ -76,17 +150,42 @@ export function hrefToTitle(href: string): string | null {
 
 /**
  * Fix relative image URLs to absolute Wikipedia URLs
+ * FIXED: Prevent double https:// by checking if URL already has protocol
+ */
+/**
+ * Fix relative/malformed image URLs to absolute Wikipedia URLs
+ * Handles: protocol-relative, root-relative, AND malformed protocols
  */
 export function fixImageSrc(src: string): string {
   if (!src) return src;
-  if (src.startsWith("//")) return "https:" + src;
-  if (src.startsWith("/")) return "https://en.wikipedia.org" + src;
+
+  // Already absolute with proper protocol - return as-is
+  if (src.startsWith("http://") || src.startsWith("https://")) {
+    return src;
+  }
+
+  // Fix MALFORMED protocol (e.g., "https//example.com" → "https://example.com")
+  if (src.startsWith("https//")) {
+    return "https://" + src.slice(7);
+  }
+  if (src.startsWith("http//")) {
+    return "http://" + src.slice(6);
+  }
+
+  // Protocol-relative URL (//example.com) - add https:
+  if (src.startsWith("//")) {
+    return "https:" + src;
+  }
+
+  // Root-relative URL (/path/to/image) - prepend Wikipedia domain
+  if (src.startsWith("/")) {
+    return "https://en.wikipedia.org" + src;
+  }
+
+  // Already absolute or unknown format - return as-is
   return src;
 }
 
-/**
- * Convert processed article HTML to Markdown format suitable for Obsidian
- */
 export function htmlToObsidianMarkdown(
   html: string,
   title: string,

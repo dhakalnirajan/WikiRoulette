@@ -49,32 +49,42 @@ export function processArticleHTML(
   const doc = parser.parseFromString(rawHtml, "text/html");
   const body = doc.body || doc.documentElement;
 
+  // Remove clutter
   REMOVE_SELECTORS.forEach((sel) => {
     try {
       body.querySelectorAll(sel).forEach((el) => el.remove());
     } catch (_) {}
   });
 
+  // Fix images with comprehensive URL handling
   body.querySelectorAll("img").forEach((img) => {
-    const src = fixImageSrc(img.getAttribute("src") || "");
+    let src = img.getAttribute("src") || "";
+    src = fixImageSrc(src);
     img.setAttribute("src", src);
     img.setAttribute("loading", "lazy");
     img.setAttribute("decoding", "async");
 
+    // Fix srcset (multiple image sources for responsive images)
     const srcset = img.getAttribute("srcset");
-    if (srcset) img.setAttribute("srcset", srcset.replace(/\/\//g, "https://"));
+    if (srcset) {
+      const fixedSrcset = srcset
+        .split(",")
+        .map((part) => {
+          const [url, descriptor] = part.trim().split(" ");
+          return `${fixImageSrc(url)} ${descriptor || ""}`.trim();
+        })
+        .join(", ");
+      img.setAttribute("srcset", fixedSrcset);
+    }
 
+    // Remove tiny decoration icons (<22px)
     const w = parseInt(img.getAttribute("width") || "999");
     if (w < 22) {
       img.closest("figure, .thumb, span")?.remove() ?? img.remove();
     }
   });
 
-  body.querySelectorAll("source[src]").forEach((s) => {
-    const src = fixImageSrc(s.getAttribute("src") || "");
-    s.setAttribute("src", src);
-  });
-
+  // Fix links
   body.querySelectorAll("a[href]").forEach((a) => {
     const href = a.getAttribute("href") || "";
     if (!href || href.startsWith("#")) return;
@@ -102,15 +112,11 @@ export function processArticleHTML(
     }
   });
 
-  const mainContent =
-    body.querySelector(".mw-parser-output") ||
-    body.querySelector('[id="mw-content-text"]') ||
-    body.querySelector("article") ||
-    body.querySelector("section") ||
-    body;
-
+  // Extract content
+  const mainContent = body.querySelector(".mw-parser-output") || body;
   mainContent.querySelectorAll("h1").forEach((h) => h.remove());
 
+  // Build TOC
   const toc: TocItem[] = [];
   const headings = mainContent.querySelectorAll<HTMLElement>("h2, h3, h4");
   headings.forEach((h, i) => {
@@ -122,15 +128,8 @@ export function processArticleHTML(
         .replace(/\[edit\]/gi, "")
         .replace(/\s+/g, " ") || "";
     if (!rawText || rawText.length < 2) return;
-    toc.push({
-      id,
-      title: rawText,
-      level: parseInt(h.tagName[1]),
-    });
+    toc.push({ id, title: rawText, level: parseInt(h.tagName[1]) });
   });
 
-  return {
-    html: mainContent.innerHTML,
-    toc,
-  };
+  return { html: mainContent.innerHTML, toc };
 }

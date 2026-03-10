@@ -9,6 +9,9 @@ const props = defineProps<{
 const activeId = ref<string>("");
 let observer: IntersectionObserver | null = null;
 
+/**
+ * Setup IntersectionObserver to highlight active section in TOC
+ */
 function setupObserver() {
   if (observer) observer.disconnect();
   if (!props.items.length) return;
@@ -31,6 +34,9 @@ function setupObserver() {
   });
 }
 
+/**
+ * Smooth scroll to section when TOC item clicked
+ */
 function scrollTo(id: string) {
   const el = document.getElementById(id);
   if (el) {
@@ -39,16 +45,17 @@ function scrollTo(id: string) {
   }
 }
 
+// Re-setup observer when TOC items change
 watch(
   () => props.items,
   () => {
-    setTimeout(setupObserver, 100);
+    setTimeout(setupObserver, 100); // Wait for DOM to render
   },
   { immediate: true },
 );
 
 onMounted(() => {
-  setTimeout(setupObserver, 200);
+  setTimeout(setupObserver, 200); // Initial setup after content loads
 });
 
 onUnmounted(() => {
@@ -185,6 +192,7 @@ onUnmounted(() => {
   font-weight: 500;
 }
 
+/* Indentation for different heading levels */
 .toc-level-2 .toc-link {
   padding-left: 0.6rem;
   font-size: 0.78rem;
@@ -212,6 +220,7 @@ onUnmounted(() => {
   letter-spacing: 0.08em;
 }
 
+/* Hide TOC on smaller screens */
 @media (max-width: 1024px) {
   .toc {
     display: none;

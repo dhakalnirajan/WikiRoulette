@@ -9,7 +9,6 @@ import { processArticleHTML } from "@/composables/useArticleProcessor";
 import type { WikiSummary, TocItem } from "@/types/wiki";
 
 const props = defineProps<{ summary: WikiSummary }>();
-
 const emit = defineEmits<{
   (e: "back"): void;
   (e: "navigate", title: string): void;
@@ -46,13 +45,11 @@ async function load(summary: WikiSummary) {
     const result = processArticleHTML(html, summary.title, handleWikiLink);
     processedHtml.value = result.html;
     toc.value = result.toc;
-
     markdownContent.value = htmlToObsidianMarkdown(
       result.html,
       summary.title,
       wikiUrl.value,
     );
-
     state.value = "ready";
     await nextTick();
     attachWikiLinkHandlers();
@@ -91,15 +88,15 @@ watch(
   { immediate: true },
 );
 
+// --- Feature Actions ---
+
 function toggleFullscreen() {
   if (!document.fullscreenElement) {
     document.documentElement.requestFullscreen().catch(() => {});
     isFullscreen.value = true;
   } else {
-    if (document.exitFullscreen) {
-      document.exitFullscreen();
-      isFullscreen.value = false;
-    }
+    document.exitFullscreen?.();
+    isFullscreen.value = false;
   }
 }
 
@@ -124,21 +121,25 @@ function toggleShortcuts() {
   showShortcuts.value = !showShortcuts.value;
 }
 
+// --- Keyboard Shortcuts ---
 function handleKeydown(e: KeyboardEvent) {
   const tag = (e.target as HTMLElement).tagName;
   if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
 
+  // Show shortcuts: F1 or Shift+?
   if (e.key === "F1" || (e.key === "?" && e.shiftKey)) {
     e.preventDefault();
     toggleShortcuts();
     return;
   }
 
+  // Close shortcuts with Esc
   if (showShortcuts.value && e.key === "Escape") {
     showShortcuts.value = false;
     return;
   }
 
+  // Go back: Backspace or Esc (when not fullscreen)
   if (e.key === "Backspace") {
     e.preventDefault();
     emit("back");
@@ -149,20 +150,22 @@ function handleKeydown(e: KeyboardEvent) {
     toggleFullscreen();
     return;
   }
-
   if (e.key === "Escape" && !isFullscreen.value && !showShortcuts.value) {
     emit("back");
     return;
   }
 
+  // Toggle view mode: M
   if (e.key.toLowerCase() === "m") {
     toggleViewMode();
   }
 
+  // Toggle fullscreen: F
   if (e.key.toLowerCase() === "f") {
     toggleFullscreen();
   }
 
+  // Download Markdown: D
   if (e.key.toLowerCase() === "d" && !e.ctrlKey && !e.metaKey) {
     downloadMarkdown();
   }
@@ -174,7 +177,6 @@ onMounted(() => {
     isFullscreen.value = !!document.fullscreenElement;
   });
 });
-
 onUnmounted(() => {
   document.removeEventListener("keydown", handleKeydown);
 });
@@ -191,6 +193,7 @@ async function copyUrl() {
 
 <template>
   <div class="reader" :class="{ 'fullscreen-active': isFullscreen }">
+    <!-- Reader top bar -->
     <div class="reader-bar">
       <button
         class="back-btn"
@@ -207,7 +210,7 @@ async function copyUrl() {
         >
           <polyline points="15 18 9 12 15 6" />
         </svg>
-        Back
+        <span class="hide-mobile">Back</span>
       </button>
 
       <div class="reader-bar-title" :title="summary.title">
@@ -215,16 +218,20 @@ async function copyUrl() {
       </div>
 
       <div class="reader-bar-actions">
+        <!-- View Mode Toggle (HTML/Markdown) -->
         <button
           class="bar-btn"
           @click="toggleViewMode"
           :class="{ active: viewMode === 'markdown' }"
           title="Toggle Markdown/HTML (M)"
         >
-          <span v-if="viewMode === 'html'">MD</span>
-          <span v-else>HTML</span>
+          <span class="hide-mobile">{{
+            viewMode === "html" ? "MD" : "HTML"
+          }}</span>
+          <span class="show-mobile">📝</span>
         </button>
 
+        <!-- Download Markdown (Obsidian Export) -->
         <button
           class="bar-btn"
           @click="downloadMarkdown"
@@ -245,6 +252,7 @@ async function copyUrl() {
           <span class="hide-mobile">Export</span>
         </button>
 
+        <!-- Fullscreen Toggle -->
         <button
           class="bar-btn"
           @click="toggleFullscreen"
@@ -279,6 +287,7 @@ async function copyUrl() {
           </svg>
         </button>
 
+        <!-- Copy URL -->
         <button
           class="bar-btn"
           :class="{ copied }"
@@ -311,6 +320,7 @@ async function copyUrl() {
           </svg>
         </button>
 
+        <!-- Help/Shortcuts -->
         <button
           class="bar-btn help-btn"
           @click="toggleShortcuts"
@@ -321,6 +331,7 @@ async function copyUrl() {
       </div>
     </div>
 
+    <!-- Main Content -->
     <div class="reader-body">
       <div v-if="state === 'loading'" class="reader-loading">
         <div class="spinner"></div>
@@ -341,7 +352,6 @@ async function copyUrl() {
       </div>
 
       <div v-else class="reader-layout">
-        <!-- TOC Sidebar on LEFT -->
         <TocSidebar :items="toc" />
 
         <article class="reader-article" ref="articleRef">
@@ -371,6 +381,7 @@ async function copyUrl() {
       </div>
     </div>
 
+    <!-- Keyboard Shortcuts Modal -->
     <Transition name="fade">
       <div
         v-if="showShortcuts"
@@ -419,9 +430,7 @@ async function copyUrl() {
 .reader {
   min-height: 100vh;
   padding-top: var(--nav-h);
-  transition: background-color 0.3s;
 }
-
 .fullscreen-active .reader-bar {
   top: 0;
   position: fixed;
@@ -444,9 +453,7 @@ async function copyUrl() {
   background: rgba(12, 12, 12, 0.9);
   backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--border);
-  transition: top 0.3s;
 }
-
 .back-btn {
   font-family: var(--font-mono);
   font-size: 0.68rem;
@@ -468,7 +475,6 @@ async function copyUrl() {
   border-color: rgba(201, 168, 76, 0.55);
   background: var(--accent-dim);
 }
-
 .reader-bar-title {
   flex: 1;
   font-family: var(--font-serif);
@@ -480,14 +486,12 @@ async function copyUrl() {
   text-overflow: ellipsis;
   min-width: 0;
 }
-
 .reader-bar-actions {
   display: flex;
   align-items: center;
   gap: 0.6rem;
   flex-shrink: 0;
 }
-
 .bar-btn {
   font-family: var(--font-mono);
   font-size: 0.65rem;
@@ -502,7 +506,6 @@ async function copyUrl() {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  text-decoration: none;
   transition: all 0.15s;
 }
 .bar-btn:hover {
@@ -514,10 +517,6 @@ async function copyUrl() {
   background: var(--accent);
   border-color: var(--accent);
 }
-.bar-btn.copied {
-  color: var(--accent);
-  border-color: rgba(201, 168, 76, 0.3);
-}
 .help-btn {
   font-weight: bold;
   color: var(--accent);
@@ -527,9 +526,15 @@ async function copyUrl() {
 .hide-mobile {
   display: inline;
 }
+.show-mobile {
+  display: none;
+}
 @media (max-width: 600px) {
   .hide-mobile {
     display: none;
+  }
+  .show-mobile {
+    display: inline;
   }
   .bar-btn {
     padding: 0.28rem 0.4rem;
@@ -566,7 +571,6 @@ async function copyUrl() {
   margin: 0;
   white-space: pre-wrap;
   word-wrap: break-word;
-  font-family: inherit;
 }
 
 .article-hero {
@@ -589,7 +593,6 @@ async function copyUrl() {
   height: 1px;
   background: var(--accent);
   opacity: 0.5;
-  flex-shrink: 0;
 }
 .article-hero-title {
   font-family: var(--font-serif);
@@ -682,7 +685,6 @@ async function copyUrl() {
   color: var(--text-muted);
   font-size: 1.5rem;
   cursor: pointer;
-  line-height: 1;
 }
 .close-btn:hover {
   color: var(--accent);

@@ -19,11 +19,17 @@
   --nav-h: 60px;
   --reader-bar-h: 52px;
   --radius: 2px;
-  --shadow-card: 0 0 0 1px rgba(201,168,76,0.04), 0 24px 64px rgba(0,0,0,0.55);
+  --shadow-card: 0 0 0 1px rgba(201, 168, 76, 0.04), 0 24px 64px rgba(0, 0, 0, 0.55);
 }
 
 /* ─── Reset & Base ─── */
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
 
 html {
   font-size: 16px;
@@ -60,16 +66,29 @@ body::after {
   transform: translateX(-50%);
   width: 700px;
   height: 500px;
-  background: radial-gradient(ellipse, rgba(201,168,76,0.055) 0%, transparent 65%);
+  background: radial-gradient(ellipse, rgba(201, 168, 76, 0.055) 0%, transparent 65%);
   pointer-events: none;
   z-index: 0;
 }
 
 /* ─── Scrollbar ─── */
-::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 99px; }
-::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border2);
+  border-radius: 99px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-faint);
+}
 
 /* ─── Wikipedia Article Content Styles ─── */
 .wiki-content {
@@ -101,6 +120,7 @@ body::after {
   align-items: center;
   gap: 0.5rem;
 }
+
 .wiki-content .article-hero-desc::before {
   content: '';
   display: inline-block;
@@ -110,7 +130,9 @@ body::after {
   opacity: 0.5;
 }
 
-.wiki-content p { margin-bottom: 1.1em; }
+.wiki-content p {
+  margin-bottom: 1.1em;
+}
 
 .wiki-content h2 {
   font-family: var(--font-serif);
@@ -133,7 +155,9 @@ body::after {
   line-height: 1.3;
 }
 
-.wiki-content h4, .wiki-content h5, .wiki-content h6 {
+.wiki-content h4,
+.wiki-content h5,
+.wiki-content h6 {
   font-family: var(--font-sans);
   font-size: 0.82rem;
   font-weight: 500;
@@ -146,30 +170,51 @@ body::after {
 .wiki-content a {
   color: var(--accent);
   text-decoration: none;
-  border-bottom: 1px solid rgba(201,168,76,0.2);
+  border-bottom: 1px solid rgba(201, 168, 76, 0.2);
   transition: color 0.15s, border-color 0.15s;
   cursor: pointer;
 }
+
 .wiki-content a:hover {
   color: #e8c97a;
-  border-color: rgba(232,201,122,0.5);
+  border-color: rgba(232, 201, 122, 0.5);
 }
+
 .wiki-content a[target="_blank"]::after {
   content: ' ↗';
   font-size: 0.7em;
   opacity: 0.5;
 }
 
-.wiki-content ul, .wiki-content ol {
+.wiki-content ul,
+.wiki-content ol {
   margin: 0.6em 0 1em 1.8em;
 }
-.wiki-content li { margin-bottom: 0.3em; }
 
-.wiki-content b, .wiki-content strong { color: var(--text); font-weight: 700; }
-.wiki-content i, .wiki-content em { font-style: italic; }
+.wiki-content li {
+  margin-bottom: 0.3em;
+}
 
-.wiki-content sup { font-size: 0.68em; line-height: 0; }
-.wiki-content sub { font-size: 0.68em; line-height: 0; }
+.wiki-content b,
+.wiki-content strong {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.wiki-content i,
+.wiki-content em {
+  font-style: italic;
+}
+
+.wiki-content sup {
+  font-size: 0.68em;
+  line-height: 0;
+}
+
+.wiki-content sub {
+  font-size: 0.68em;
+  line-height: 0;
+}
 
 /* Tables */
 .wiki-content table {
@@ -183,6 +228,7 @@ body::after {
   overflow: hidden;
   font-family: var(--font-sans);
 }
+
 .wiki-content th {
   background: var(--surface2);
   color: var(--accent);
@@ -195,14 +241,21 @@ body::after {
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
+
 .wiki-content td {
   padding: 0.45rem 0.9rem;
-  border-bottom: 1px solid rgba(40,40,40,0.6);
+  border-bottom: 1px solid rgba(40, 40, 40, 0.6);
   color: var(--text-dim);
   vertical-align: top;
 }
-.wiki-content tr:last-child td { border-bottom: none; }
-.wiki-content tbody tr:hover td { background: rgba(255,255,255,0.015); }
+
+.wiki-content tr:last-child td {
+  border-bottom: none;
+}
+
+.wiki-content tbody tr:hover td {
+  background: rgba(255, 255, 255, 0.015);
+}
 
 /* Infobox */
 .wiki-content table.infobox,
@@ -217,12 +270,17 @@ body::after {
   border: 1px solid var(--border) !important;
   border-radius: var(--radius);
 }
+
 .wiki-content .infobox th {
-  background: rgba(201,168,76,0.06) !important;
+  background: rgba(201, 168, 76, 0.06) !important;
   font-size: 0.65rem !important;
   white-space: normal;
 }
-.wiki-content .infobox td { font-size: 0.82rem; }
+
+.wiki-content .infobox td {
+  font-size: 0.82rem;
+}
+
 .wiki-content .infobox caption,
 .wiki-content .infobox-title,
 .wiki-content .infobox-above {
@@ -248,12 +306,14 @@ body::after {
   padding: 4px;
   border-radius: var(--radius);
 }
+
 .wiki-content figure img,
 .wiki-content .thumb img {
   max-width: 100%;
   display: block;
   border-radius: 1px;
 }
+
 .wiki-content figcaption,
 .wiki-content .thumbcaption {
   font-size: 0.73rem;
@@ -263,7 +323,24 @@ body::after {
   line-height: 1.5;
   font-family: var(--font-sans);
 }
-.wiki-content img { max-width: 100%; height: auto; }
+
+/* ─── Fix for double https:// bug in images ─── */
+.wiki-content img[src*="https://https://"] {
+  display: none;
+}
+
+/* ─── Ensure responsive images ─── */
+.wiki-content img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* ─── Fix for maps.wikimedia.org URLs ─── */
+.wiki-content img[src*="maps.wikimedia.org"] {
+  max-width: 100%;
+  height: auto;
+}
 
 /* Blockquote */
 .wiki-content blockquote {
@@ -277,7 +354,8 @@ body::after {
 }
 
 /* Code */
-.wiki-content code, .wiki-content pre {
+.wiki-content code,
+.wiki-content pre {
   font-family: var(--font-mono);
   font-size: 0.85em;
   background: var(--surface2);
@@ -285,12 +363,18 @@ body::after {
   border-radius: var(--radius);
   padding: 0.15em 0.4em;
 }
+
 .wiki-content pre {
   padding: 1rem;
   overflow-x: auto;
   line-height: 1.6;
 }
-.wiki-content pre code { background: none; border: none; padding: 0; }
+
+.wiki-content pre code {
+  background: none;
+  border: none;
+  padding: 0;
+}
 
 /* Hide clutter */
 .wiki-content .mw-editsection,
@@ -316,19 +400,177 @@ body::after {
 .wiki-content .magnify,
 .wiki-content .navbar,
 .wiki-content style,
-.wiki-content link { display: none !important; }
+.wiki-content link {
+  display: none !important;
+}
 
-/* Responsive: un-float on narrow screens */
-@media (max-width: 640px) {
-  .wiki-content figure,
-  .wiki-content .thumb,
-  .wiki-content .thumbinner,
-  .wiki-content table.infobox,
+/* ─── Responsive Media Queries ─── */
+
+/* Tablet (768px - 1024px) */
+@media (max-width: 1024px) {
+  .wiki-content {
+    font-size: 0.95rem;
+    line-height: 1.8;
+  }
+
+  .wiki-content table {
+    font-size: 0.8rem;
+    overflow-x: auto;
+    display: block;
+  }
+
   .wiki-content .infobox {
     float: none !important;
     margin: 1rem 0 !important;
     max-width: 100% !important;
+  }
+}
+
+/* Mobile (max-width: 767px) */
+@media (max-width: 767px) {
+  :root {
+    --nav-h: 56px;
+    --reader-bar-h: 48px;
+  }
+
+  .wiki-content {
+    font-size: 1rem;
+    line-height: 1.7;
+    padding: 0 0.5rem;
+  }
+
+  /* Make all media responsive */
+  .wiki-content img,
+  .wiki-content video,
+  .wiki-content figure,
+  .wiki-content .thumb {
+    max-width: 100% !important;
+    height: auto !important;
+    float: none !important;
+    margin: 1rem 0 !important;
+  }
+
+  .wiki-content figcaption {
+    font-size: 0.7rem;
+    padding: 0.3rem 0;
+  }
+
+  /* Tables: horizontal scroll on mobile */
+  .wiki-content table {
+    display: block;
+    overflow-x: auto;
+    font-size: 0.75rem;
+  }
+
+  .wiki-content th,
+  .wiki-content td {
+    padding: 0.3rem 0.5rem;
+  }
+
+  /* Headings: tighter spacing */
+  .wiki-content h2 {
+    font-size: 1.4rem;
+    margin: 2rem 0 0.8rem;
+  }
+
+  .wiki-content h3 {
+    font-size: 1.1rem;
+    margin: 1.5rem 0 0.6rem;
+  }
+
+  /* Links: larger tap targets */
+  .wiki-content a,
+  .wiki-content .wiki-link {
+    padding: 0.1rem 0;
+    min-height: 44px;
+    /* Apple's recommended tap target */
+    display: inline-flex;
+    align-items: center;
+  }
+
+  /* Infobox: full width on mobile */
+  .wiki-content .infobox,
+  .wiki-content table.infobox {
+    float: none !important;
+    margin: 1rem 0 !important;
+    max-width: 100% !important;
     width: 100% !important;
+  }
+
+  /* References: collapsible on mobile */
+  .references-section {
+    margin-top: 2rem;
+  }
+}
+
+/* Small Mobile (max-width: 480px) */
+@media (max-width: 480px) {
+  .wiki-content {
+    font-size: 0.95rem;
+  }
+
+  .wiki-content h2 {
+    font-size: 1.3rem;
+  }
+
+  .wiki-content h3 {
+    font-size: 1rem;
+  }
+
+  .article-hero-title {
+    font-size: clamp(1.3rem, 7vw, 1.8rem) !important;
+  }
+}
+
+/* ─── Print Styles ─── */
+@media print {
+
+  .reader-bar,
+  .toc,
+  .shortcuts-modal {
+    display: none !important;
+  }
+
+  .reader {
+    padding-top: 0;
+  }
+
+  .wiki-content {
+    color: #000;
+    background: #fff;
+    font-size: 11pt;
+    line-height: 1.5;
+  }
+
+  .wiki-content a {
+    color: #000;
+    text-decoration: underline;
+  }
+}
+
+/* ─── High Contrast Mode ─── */
+@media (prefers-contrast: high) {
+  :root {
+    --border: #444;
+    --border2: #555;
+    --text-muted: #aaa;
+  }
+
+  .wiki-content a {
+    border-bottom-width: 2px;
+  }
+}
+
+/* ─── Reduced Motion ─── */
+@media (prefers-reduced-motion: reduce) {
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 
@@ -346,21 +588,55 @@ body::after {
 }
 
 /* ─── Page transitions ─── */
-.fade-enter-active, .fade-leave-active { transition: opacity 0.2s ease; }
-.fade-enter-from, .fade-leave-to { opacity: 0; }
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
+}
 
-.slide-right-enter-active, .slide-right-leave-active { transition: all 0.28s cubic-bezier(0.4,0,0.2,1); }
-.slide-right-enter-from { opacity: 0; transform: translateX(28px); }
-.slide-right-leave-to { opacity: 0; transform: translateX(-28px); }
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
 
-.slide-left-enter-active, .slide-left-leave-active { transition: all 0.28s cubic-bezier(0.4,0,0.2,1); }
-.slide-left-enter-from { opacity: 0; transform: translateX(-28px); }
-.slide-left-leave-to { opacity: 0; transform: translateX(28px); }
+.slide-right-enter-active,
+.slide-right-leave-active {
+  transition: all 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.slide-right-enter-from {
+  opacity: 0;
+  transform: translateX(28px);
+}
+
+.slide-right-leave-to {
+  opacity: 0;
+  transform: translateX(-28px);
+}
+
+.slide-left-enter-active,
+.slide-left-leave-active {
+  transition: all 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.slide-left-enter-from {
+  opacity: 0;
+  transform: translateX(-28px);
+}
+
+.slide-left-leave-to {
+  opacity: 0;
+  transform: translateX(28px);
+}
 
 /* ─── Loading pulse ─── */
 @keyframes shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 .skeleton {
@@ -370,11 +646,128 @@ body::after {
   border-radius: var(--radius);
 }
 
-@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .spinner {
-  width: 28px; height: 28px;
+  width: 28px;
+  height: 28px;
   border: 2px solid var(--border);
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 0.75s linear infinite;
+}
+
+/* ─── Markdown View Styles ─── */
+.markdown-content {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--text-dim);
+  background: var(--surface2);
+  padding: 2rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.markdown-content pre {
+  margin: 0;
+  font-family: inherit;
+}
+
+/* ─── Shortcuts Modal Styles ─── */
+.shortcuts-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(4px);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.shortcuts-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2rem;
+  max-width: 500px;
+  width: 100%;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+}
+
+.shortcuts-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 1rem;
+}
+
+.shortcuts-header h2 {
+  font-family: var(--font-serif);
+  font-size: 1.5rem;
+  color: var(--text);
+  margin: 0;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.5rem;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.close-btn:hover {
+  color: var(--accent);
+}
+
+.shortcuts-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.shortcut-item {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  color: var(--text-dim);
+}
+
+kbd {
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 3px;
+  padding: 0.2rem 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--accent);
+}
+
+.shortcuts-footer {
+  margin-top: 1.5rem;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text-faint);
+}
+
+@media (max-width: 640px) {
+  .shortcuts-grid {
+    grid-template-columns: 1fr;
+  }
 }
