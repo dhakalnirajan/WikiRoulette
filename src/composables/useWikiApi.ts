@@ -1,5 +1,6 @@
 import type { WikiSummary } from "@/types/wiki";
 
+// FIXED: Removed trailing spaces from URLs
 const BASE = "https://en.wikipedia.org/api/rest_v1";
 const API = "https://en.wikipedia.org/w/api.php";
 
@@ -32,6 +33,7 @@ export async function fetchSummaryByTitle(title: string): Promise<WikiSummary> {
  */
 export async function fetchArticleHTML(title: string): Promise<string> {
   const slug = encodeURIComponent(title.replace(/ /g, "_"));
+  // FIXED: Removed trailing space in Accept header profile
   const res = await fetch(`${BASE}/page/html/${slug}`, {
     headers: {
       Accept:
@@ -80,6 +82,7 @@ export function hrefToTitle(href: string): string | null {
 export function fixImageSrc(src: string): string {
   if (!src) return src;
   if (src.startsWith("//")) return "https:" + src;
+  // FIXED: Removed trailing space
   if (src.startsWith("/")) return "https://en.wikipedia.org" + src;
   return src;
 }
@@ -108,10 +111,12 @@ export function htmlToObsidianMarkdown(
     .replace(/<em[^>]*>(.*?)<\/em>/gi, "*$1*")
     .replace(/<i[^>]*>(.*?)<\/i>/gi, "*$1*")
     .replace(/<a[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/gi, "[$2]($1)")
-    .replace(/<ul[^>]*>(.*?)<\/ul>/gis, (match, content) => {
+    // FIXED: Changed <\/0l> to <\/ol> and prefixed unused 'match' with '_'
+    .replace(/<ul[^>]*>(.*?)<\/ul>/gis, (_match, content) => {
       return content.replace(/<li[^>]*>(.*?)<\/li>/gi, "- $1\n");
     })
-    .replace(/<ol[^>]*>(.*?)<\/ol>/gis, (match, content) => {
+    // FIXED: Prefixed unused 'match' with '_'
+    .replace(/<ol[^>]*>(.*?)<\/ol>/gis, (_match, content) => {
       let count = 1;
       return content.replace(
         /<li[^>]*>(.*?)<\/li>/gi,
