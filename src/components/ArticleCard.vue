@@ -1,35 +1,35 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import type { WikiSummary } from '@/types/wiki'
+import { ref, computed } from "vue";
+import type { WikiSummary } from "@/types/wiki";
 
 const props = defineProps<{
-  summary: WikiSummary
-}>()
+  summary: WikiSummary;
+  bookmarked?: boolean; // NEW: bookmark state
+}>();
 
 const emit = defineEmits<{
-  (e: 'read'): void
-}>()
+  (e: "read"): void;
+  (e: "pomodoro"): void;
+  (e: "bookmark"): void; // NEW: bookmark toggle event
+}>();
 
-const copied = ref(false)
+const copied = ref(false);
 
 const wikiUrl = computed(
   () =>
     props.summary.content_urls?.desktop?.page ??
-    `https://en.wikipedia.org/wiki/${encodeURIComponent(props.summary.title.replace(/ /g, '_'))}`
-)
+    `https://en.wikipedia.org/wiki/${encodeURIComponent(props.summary.title.replace(/ /g, "_"))}`,
+);
 
 const paragraphs = computed(() =>
-  (props.summary.extract ?? '')
-    .split('\n')
-    .filter(Boolean)
-    .slice(0, 4)
-)
+  (props.summary.extract ?? "").split("\n").filter(Boolean).slice(0, 4),
+);
 
 async function copyUrl() {
   try {
-    await navigator.clipboard.writeText(wikiUrl.value)
-    copied.value = true
-    setTimeout(() => (copied.value = false), 1800)
+    await navigator.clipboard.writeText(wikiUrl.value);
+    copied.value = true;
+    setTimeout(() => (copied.value = false), 1800);
   } catch (_) {}
 }
 </script>
@@ -41,6 +41,24 @@ async function copyUrl() {
       <div class="card-eyebrow">
         <span class="eyebrow-line" aria-hidden="true"></span>
         Random Article · Wikipedia
+        <!-- Bookmark button (top right) -->
+        <button
+          class="bookmark-btn"
+          :class="{ active: bookmarked }"
+          @click.stop="emit('bookmark')"
+          :title="bookmarked ? 'Remove bookmark' : 'Add bookmark'"
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+          </svg>
+        </button>
       </div>
       <h1 class="card-title" v-html="summary.displaytitle || summary.title" />
       <p v-if="summary.description" class="card-description">
@@ -65,32 +83,92 @@ async function copyUrl() {
     <!-- Footer -->
     <footer class="card-footer">
       <div class="footer-left">
-        <a :href="wikiUrl" target="_blank" rel="noopener noreferrer" class="footer-link">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-            <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+        <a
+          :href="wikiUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="footer-link"
+        >
+          <svg
+            width="11"
+            height="11"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path
+              d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"
+            />
+            <polyline points="15 3 21 3 21 9" />
+            <line x1="10" y1="14" x2="21" y2="3" />
           </svg>
           Wikipedia ↗
         </a>
 
         <button class="footer-link" :class="{ copied }" @click="copyUrl">
-          <svg v-if="!copied" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+          <svg
+            v-if="!copied"
+            width="11"
+            height="11"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <rect x="9" y="9" width="13" height="13" rx="2" />
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
           </svg>
-          <svg v-else width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="20 6 9 12 4 12"/><polyline points="20 6 9 18 4 12"/>
+          <svg
+            v-else
+            width="11"
+            height="11"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <polyline points="20 6 9 12 4 12" />
+            <polyline points="20 6 9 18 4 12" />
           </svg>
-          {{ copied ? 'Copied!' : 'Copy URL' }}
+          {{ copied ? "Copied!" : "Copy URL" }}
         </button>
       </div>
 
-      <button class="read-btn" @click="emit('read')">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
-          <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
-        </svg>
-        Read Full Article
-      </button>
+      <div class="footer-right">
+        <button
+          class="pomodoro-btn"
+          @click="emit('pomodoro')"
+          title="Start Learning Mode (L)"
+        >
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <circle cx="12" cy="12" r="10" />
+            <polyline points="12 6 12 12 16 14" />
+          </svg>
+          Learn
+        </button>
+        <button class="read-btn" @click="emit('read')">
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+            <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+          </svg>
+          Read Full Article
+        </button>
+      </div>
     </footer>
   </article>
 </template>
@@ -104,17 +182,25 @@ async function copyUrl() {
   border-radius: var(--radius);
   overflow: hidden;
   box-shadow: var(--shadow-card);
-  animation: cardIn 0.3s cubic-bezier(0.4,0,0.2,1) both;
+  animation: cardIn 0.3s cubic-bezier(0.4, 0, 0.2, 1) both;
+  position: relative;
 }
 
 @keyframes cardIn {
-  from { opacity: 0; transform: translateY(12px) scale(0.99); }
-  to   { opacity: 1; transform: translateY(0) scale(1); }
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .card-header {
   padding: 2.2rem 2.8rem 1.8rem;
   border-bottom: 1px solid var(--border);
+  position: relative;
 }
 
 .card-eyebrow {
@@ -127,7 +213,9 @@ async function copyUrl() {
   display: flex;
   align-items: center;
   gap: 0.6rem;
+  justify-content: space-between;
 }
+
 .eyebrow-line {
   display: inline-block;
   width: 18px;
@@ -135,6 +223,30 @@ async function copyUrl() {
   background: var(--accent);
   opacity: 0.55;
   flex-shrink: 0;
+}
+
+.bookmark-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0.3rem;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  margin-left: auto;
+}
+
+.bookmark-btn:hover {
+  color: var(--accent);
+  background: var(--surface2);
+}
+
+.bookmark-btn.active {
+  color: var(--accent);
+  fill: var(--accent);
 }
 
 .card-title {
@@ -147,9 +259,13 @@ async function copyUrl() {
   margin-bottom: 0.5rem;
 }
 
-/* Wikipedia displaytitle can have HTML (italics etc) */
-.card-title :deep(i), .card-title :deep(em) { font-style: italic; }
-.card-title :deep(sup) { font-size: 0.6em; }
+.card-title :deep(i),
+.card-title :deep(em) {
+  font-style: italic;
+}
+.card-title :deep(sup) {
+  font-size: 0.6em;
+}
 
 .card-description {
   font-family: var(--font-mono);
@@ -181,7 +297,9 @@ async function copyUrl() {
   line-height: 1.82;
   color: var(--text-dim);
 }
-.card-extract p + p { margin-top: 0.9em; }
+.card-extract p + p {
+  margin-top: 0.9em;
+}
 
 .card-footer {
   padding: 1rem 2.8rem;
@@ -189,12 +307,16 @@ async function copyUrl() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: rgba(0,0,0,0.18);
+  background: rgba(0, 0, 0, 0.18);
   gap: 1rem;
   flex-wrap: wrap;
 }
 
-.footer-left { display: flex; align-items: center; gap: 1.2rem; }
+.footer-left {
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+}
 
 .footer-link {
   font-family: var(--font-mono);
@@ -211,9 +333,43 @@ async function copyUrl() {
   padding: 0;
   text-decoration: none;
   transition: color 0.16s;
+  min-height: 44px;
 }
-.footer-link:hover { color: var(--text); }
-.footer-link.copied { color: var(--accent); }
+.footer-link:hover {
+  color: var(--text);
+}
+.footer-link.copied {
+  color: var(--accent);
+}
+
+.footer-right {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.pomodoro-btn {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text);
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  cursor: pointer;
+  padding: 0.45rem 1rem;
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  transition: all 0.16s;
+  min-height: 44px;
+}
+.pomodoro-btn:hover {
+  background: var(--accent-glow);
+  border-color: var(--accent);
+  color: var(--accent);
+}
 
 .read-btn {
   font-family: var(--font-mono);
@@ -222,7 +378,7 @@ async function copyUrl() {
   text-transform: uppercase;
   color: var(--accent);
   background: var(--accent-glow);
-  border: 1px solid rgba(201,168,76,0.28);
+  border: 1px solid rgba(201, 168, 76, 0.28);
   cursor: pointer;
   padding: 0.45rem 1rem;
   border-radius: var(--radius);
@@ -230,15 +386,27 @@ async function copyUrl() {
   align-items: center;
   gap: 0.45rem;
   transition: all 0.16s;
+  min-height: 44px;
 }
 .read-btn:hover {
   background: var(--accent-dim);
-  border-color: rgba(201,168,76,0.55);
+  border-color: rgba(201, 168, 76, 0.55);
   color: #e8c97a;
 }
 
 @media (max-width: 640px) {
-  .card-header, .card-body, .card-footer { padding-left: 1.4rem; padding-right: 1.4rem; }
-  .card-thumb { max-width: 120px; }
+  .card-header,
+  .card-body,
+  .card-footer {
+    padding-left: 1.4rem;
+    padding-right: 1.4rem;
+  }
+  .card-thumb {
+    max-width: 120px;
+  }
+  .footer-right {
+    width: 100%;
+    justify-content: center;
+  }
 }
 </style>

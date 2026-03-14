@@ -771,3 +771,375 @@ kbd {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* ─── Pomodoro Learning Mode ─── */
+
+/* Progress bar animation */
+@keyframes progressPulse {
+  0% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.7;
+  }
+
+  100% {
+    opacity: 1;
+  }
+}
+
+.progress-fill {
+  animation: progressPulse 2s ease-in-out infinite;
+}
+
+/* Notepad editor focus states */
+.notepad-editor:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+/* Anti-peeking overlay animation */
+.peek-overlay {
+  animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+/* Session complete card animation */
+.complete-card {
+  animation: slideUp 0.4s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Responsive adjustments for Pomodoro */
+@media (max-width: 768px) {
+  .pomodoro-header {
+    flex-wrap: wrap;
+    gap: 0.8rem;
+  }
+
+  .timer-display {
+    order: -1;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .phase-info {
+    display: none;
+  }
+
+  .pomodoro-content {
+    padding: 1rem;
+  }
+
+  .article-container,
+  .notepad-container {
+    padding: 1.5rem;
+  }
+
+  .notepad-editor {
+    min-height: 250px;
+    font-size: 0.95rem;
+  }
+
+  .export-preview {
+    max-height: 300px;
+  }
+}
+
+@media (max-width: 480px) {
+  .pomodoro-header {
+    padding: 0.8rem;
+  }
+
+  .time-remaining {
+    font-size: 1.4rem;
+  }
+
+  .article-title {
+    font-size: clamp(1.4rem, 5vw, 1.8rem);
+  }
+
+  .notepad-editor {
+    font-size: 0.9rem;
+    padding: 0.8rem;
+  }
+
+  .action-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .export-actions {
+    flex-direction: column;
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .progress-bar {
+    border: 1px solid var(--border2);
+  }
+
+  .notepad-editor {
+    border-width: 2px;
+  }
+
+  .peek-overlay {
+    background: rgba(0, 0, 0, 0.95);
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .progress-fill {
+    animation: none;
+  }
+
+  .complete-card,
+  .peek-overlay {
+    animation: none;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+
+/* ─── First-Time Guide Styles ─── */
+
+/* Guide highlight effect */
+.guide-highlight {
+  box-shadow: 0 0 0 3px var(--accent), 0 0 20px rgba(201, 168, 76, 0.3) !important;
+  animation: guidePulse 2s infinite;
+  position: relative !important;
+  z-index: 1001 !important;
+}
+
+@keyframes guidePulse {
+
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px var(--accent), 0 0 20px rgba(201, 168, 76, 0.3);
+  }
+
+  50% {
+    box-shadow: 0 0 0 4px var(--accent), 0 0 30px rgba(201, 168, 76, 0.5);
+  }
+}
+
+/* Ensure guide elements are above overlays */
+.guide-overlay {
+  z-index: 10000 !important;
+}
+
+.guide-card {
+  z-index: 10001 !important;
+}
+
+/* Responsive adjustments for guide */
+@media (max-width: 640px) {
+  .guide-card {
+    margin: 1rem;
+    padding: 1.5rem;
+  }
+
+  .guide-title {
+    font-size: 1.2rem;
+  }
+
+  .guide-description {
+    font-size: 0.9rem;
+  }
+}
+
+/* Reduced motion support for guide animations */
+@media (prefers-reduced-motion: reduce) {
+
+  .guide-card,
+  .guide-highlight {
+    animation: none !important;
+  }
+
+  .guide-progress-fill {
+    transition: none;
+  }
+}
+
+/* ─── Pomodoro Learning Mode Styles ─── */
+
+/* Progress bar animation */
+@keyframes progressPulse {
+  0% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.7;
+  }
+
+  100% {
+    opacity: 1;
+  }
+}
+
+.progress-fill {
+  animation: progressPulse 2s ease-in-out infinite;
+}
+
+/* Notepad editor focus states */
+.notepad-editor:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+/* Anti-peeking overlay animation */
+.peek-overlay {
+  animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+/* Session complete card animation */
+.complete-card {
+  animation: slideUp 0.4s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Responsive adjustments for Pomodoro */
+@media (max-width: 768px) {
+  .pomodoro-header {
+    flex-wrap: wrap;
+    gap: 0.8rem;
+  }
+
+  .timer-display {
+    order: -1;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .phase-info {
+    display: none;
+  }
+
+  .pomodoro-content {
+    padding: 1rem;
+  }
+
+  .article-skeleton,
+  .notepad-container {
+    padding: 1.5rem;
+  }
+
+  .notepad-editor {
+    min-height: 250px;
+    font-size: 0.95rem;
+  }
+
+  .export-preview {
+    max-height: 300px;
+  }
+}
+
+@media (max-width: 480px) {
+  .pomodoro-header {
+    padding: 0.8rem;
+  }
+
+  .time-remaining {
+    font-size: 1.4rem;
+  }
+
+  .notepad-editor {
+    font-size: 0.9rem;
+    padding: 0.8rem;
+  }
+
+  .action-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .export-actions {
+    flex-direction: column;
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .progress-bar {
+    border: 1px solid var(--border2);
+  }
+
+  .notepad-editor {
+    border-width: 2px;
+  }
+
+  .peek-overlay {
+    background: rgba(0, 0, 0, 0.95);
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .progress-fill {
+    animation: none;
+  }
+
+  .complete-card,
+  .peek-overlay {
+    animation: none;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

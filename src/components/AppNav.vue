@@ -1,21 +1,46 @@
 <script setup lang="ts">
 defineProps<{
-  inReader: boolean
-  totalVisited: number
-}>()
+  inReader: boolean;
+  totalVisited: number;
+}>();
 
+// FIXED: Added show-guide event
 defineEmits<{
-  (e: 'go-home'): void
-}>()
+  (e: "go-home"): void;
+  (e: "show-guide"): void;
+}>();
 </script>
 
 <template>
   <nav class="nav">
     <button class="logo" @click="$emit('go-home')" aria-label="Go to home">
-      <span class="logo-wiki">WIKI</span><span class="logo-roulette">ROULETTE</span>
+      <span class="logo-wiki">WIKI</span
+      ><span class="logo-roulette">ROULETTE</span>
     </button>
 
     <div class="nav-right">
+      <!-- FIXED: Added Guide Button -->
+      <button
+        class="nav-pill"
+        @click="$emit('show-guide')"
+        title="Show user guide"
+        aria-label="Show user guide"
+      >
+        <svg
+          width="11"
+          height="11"
+          viewBox="0 0 24  24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <circle cx="12" cy="12" r="10" />
+          <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+          <line x1="12" y1="17" x2="12.01" y2="17" />
+        </svg>
+        Guide
+      </button>
+
       <span v-if="totalVisited > 0" class="visit-count">
         <span class="visit-num">{{ totalVisited }}</span>
         <span class="visit-label">explored</span>
@@ -27,9 +52,16 @@ defineEmits<{
         @click="$emit('go-home')"
         :aria-current="!inReader ? 'page' : undefined"
       >
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
-          <polyline points="9 22 9 12 15 12 15 22"/>
+        <svg
+          width="11"
+          height="11"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.2"
+        >
+          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+          <polyline points="9 22 9 12 15 12 15 22" />
         </svg>
         Explore
       </button>
@@ -40,7 +72,9 @@ defineEmits<{
 <style scoped>
 .nav {
   position: fixed;
-  top: 0; left: 0; right: 0;
+  top: 0;
+  left: 0;
+  right: 0;
   z-index: 500;
   height: var(--nav-h);
   display: flex;
@@ -66,10 +100,16 @@ defineEmits<{
   gap: 0;
   transition: opacity 0.15s;
 }
-.logo:hover { opacity: 0.8; }
+.logo:hover {
+  opacity: 0.8;
+}
 
-.logo-wiki { color: var(--accent); }
-.logo-roulette { color: var(--text); }
+.logo-wiki {
+  color: var(--accent);
+}
+.logo-roulette {
+  color: var(--text);
+}
 
 .nav-right {
   display: flex;
@@ -113,12 +153,16 @@ defineEmits<{
 }
 .nav-pill.active {
   color: var(--accent);
-  border-color: rgba(201,168,76,0.35);
+  border-color: rgba(201, 168, 76, 0.35);
   background: var(--accent-glow);
 }
 
 @media (max-width: 640px) {
-  .nav { padding: 0 1.2rem; }
-  .visit-count { display: none; }
+  .nav {
+    padding: 0 1.2rem;
+  }
+  .visit-count {
+    display: none;
+  }
 }
 </style>

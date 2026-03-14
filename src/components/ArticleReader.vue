@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from "vue";
 import TocSidebar from "./TocSidebar.vue";
+import PomodoroLearningView from "./PomodoroLearningView.vue";
 import {
   fetchArticleHTML,
   htmlToObsidianMarkdown,
@@ -19,6 +20,9 @@ const processedHtml = ref("");
 const toc = ref<TocItem[]>([]);
 const errorMsg = ref("");
 const articleRef = ref<HTMLElement | null>(null);
+const showPomodoro = ref(false);
+const scrollProgress = ref(0);
+const showBackToTop = ref(false);
 
 // Feature states
 const isFullscreen = ref(false);
@@ -68,7 +72,9 @@ function attachWikiLinkHandlers() {
   articleRef.value
     .querySelectorAll<HTMLElement>("[data-wiki]")
     .forEach((el) => {
-      el.addEventListener("click", () => {
+      el.removeAttribute("href");
+      el.addEventListener("click", (e) => {
+        e.preventDefault();
         const title = el.getAttribute("data-wiki");
         if (title) emit("navigate", title);
       });
@@ -79,16 +85,57 @@ function attachWikiLinkHandlers() {
           if (title) emit("navigate", title);
         }
       });
+      el.setAttribute("role", "button");
+      el.setAttribute("tabindex", "0");
+      el.setAttribute("title", `Read article: ${el.getAttribute("data-wiki")}`);
+    });
+}
+
+function attachFallbackLinkHandlers() {
+  if (!articleRef.value) return;
+  articleRef.value
+    .querySelectorAll<HTMLAnchorElement>("a[href]")
+    .forEach((a) => {
+      const href = a.getAttribute("href") || "";
+      if (href.startsWith("/wiki/") || href.startsWith("./")) {
+        a.addEventListener("click", (e) => {
+          e.preventDefault();
+          const title =
+            a.getAttribute("data-wiki") ||
+            decodeURIComponent(
+              href.replace(/^\.?\/wiki\//, "").split("#")[0],
+            ).replace(/_/g, " ");
+          if (title && !title.includes(":")) {
+            emit("navigate", title);
+          }
+        });
+      }
     });
 }
 
 watch(
   () => props.summary,
-  (newSummary) => load(newSummary),
+  (newSummary) => {
+    load(newSummary);
+  },
   { immediate: true },
 );
 
+// --- Reading progress ---
+function updateScrollProgress() {
+  const scrollTop = window.scrollY;
+  const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+  const progress = docHeight > 0 ? (scrollTop / docHeight) * 100 : 0;
+  scrollProgress.value = Math.min(100, Math.max(0, progress));
+  showBackToTop.value = scrollTop > 300;
+}
+
 // --- Feature Actions ---
+function startPomodoro() {
+  if (props.summary) {
+    showPomodoro.value = true;
+  }
+}
 
 function toggleFullscreen() {
   if (!document.fullscreenElement) {
@@ -121,31 +168,29 @@ function toggleShortcuts() {
   showShortcuts.value = !showShortcuts.value;
 }
 
+function scrollToTop() {
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
 // --- Keyboard Shortcuts ---
 function handleKeydown(e: KeyboardEvent) {
   const tag = (e.target as HTMLElement).tagName;
   if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
 
-  // Show shortcuts: F1 or Shift+?
   if (e.key === "F1" || (e.key === "?" && e.shiftKey)) {
     e.preventDefault();
     toggleShortcuts();
     return;
   }
-
-  // Close shortcuts with Esc
   if (showShortcuts.value && e.key === "Escape") {
     showShortcuts.value = false;
     return;
   }
-
-  // Go back: Backspace or Esc (when not fullscreen)
   if (e.key === "Backspace") {
     e.preventDefault();
     emit("back");
     return;
   }
-
   if (e.key === "Escape" && isFullscreen.value) {
     toggleFullscreen();
     return;
@@ -154,20 +199,18 @@ function handleKeydown(e: KeyboardEvent) {
     emit("back");
     return;
   }
-
-  // Toggle view mode: M
   if (e.key.toLowerCase() === "m") {
     toggleViewMode();
   }
-
-  // Toggle fullscreen: F
   if (e.key.toLowerCase() === "f") {
     toggleFullscreen();
   }
-
-  // Download Markdown: D
   if (e.key.toLowerCase() === "d" && !e.ctrlKey && !e.metaKey) {
     downloadMarkdown();
+  }
+  if (e.key.toLowerCase() === "l" && !e.ctrlKey && !e.metaKey) {
+    e.preventDefault();
+    startPomodoro();
   }
 }
 
@@ -176,9 +219,13 @@ onMounted(() => {
   document.addEventListener("fullscreenchange", () => {
     isFullscreen.value = !!document.fullscreenElement;
   });
+  window.addEventListener("scroll", updateScrollProgress);
+  updateScrollProgress();
 });
+
 onUnmounted(() => {
   document.removeEventListener("keydown", handleKeydown);
+  window.removeEventListener("scroll", updateScrollProgress);
 });
 
 const copied = ref(false);
@@ -193,236 +240,308 @@ async function copyUrl() {
 
 <template>
   <div class="reader" :class="{ 'fullscreen-active': isFullscreen }">
-    <!-- Reader top bar -->
-    <div class="reader-bar">
-      <button
-        class="back-btn"
-        @click="$emit('back')"
-        aria-label="Back to explore"
-      >
-        <svg
-          width="13"
-          height="13"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2.2"
-        >
-          <polyline points="15 18 9 12 15 6" />
-        </svg>
-        <span class="hide-mobile">Back</span>
-      </button>
-
-      <div class="reader-bar-title" :title="summary.title">
-        {{ summary.title }}
-      </div>
-
-      <div class="reader-bar-actions">
-        <!-- View Mode Toggle (HTML/Markdown) -->
-        <button
-          class="bar-btn"
-          @click="toggleViewMode"
-          :class="{ active: viewMode === 'markdown' }"
-          title="Toggle Markdown/HTML (M)"
-        >
-          <span class="hide-mobile">{{
-            viewMode === "html" ? "MD" : "HTML"
-          }}</span>
-          <span class="show-mobile">📝</span>
-        </button>
-
-        <!-- Download Markdown (Obsidian Export) -->
-        <button
-          class="bar-btn"
-          @click="downloadMarkdown"
-          title="Export to Obsidian MD (D)"
-        >
-          <svg
-            width="11"
-            height="11"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-            <polyline points="7 10 12 15 17 10" />
-            <line x1="12" y1="15" x2="12" y2="3" />
-          </svg>
-          <span class="hide-mobile">Export</span>
-        </button>
-
-        <!-- Fullscreen Toggle -->
-        <button
-          class="bar-btn"
-          @click="toggleFullscreen"
-          :class="{ active: isFullscreen }"
-          title="Toggle Fullscreen (F)"
-        >
-          <svg
-            v-if="!isFullscreen"
-            width="11"
-            height="11"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <path
-              d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"
-            />
-          </svg>
-          <svg
-            v-else
-            width="11"
-            height="11"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <path
-              d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"
-            />
-          </svg>
-        </button>
-
-        <!-- Copy URL -->
-        <button
-          class="bar-btn"
-          :class="{ copied }"
-          @click="copyUrl"
-          title="Copy URL"
-        >
-          <svg
-            v-if="!copied"
-            width="11"
-            height="11"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <rect x="9" y="9" width="13" height="13" rx="2" />
-            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-          </svg>
-          <svg
-            v-else
-            width="11"
-            height="11"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <polyline points="20 6 9 12 4 12" />
-            <polyline points="20 6 9 18 4 12" />
-          </svg>
-        </button>
-
-        <!-- Help/Shortcuts -->
-        <button
-          class="bar-btn help-btn"
-          @click="toggleShortcuts"
-          title="Shortcuts (F1 / Shift+?)"
-        >
-          <span>?</span>
-        </button>
-      </div>
-    </div>
-
-    <!-- Main Content -->
-    <div class="reader-body">
-      <div v-if="state === 'loading'" class="reader-loading">
-        <div class="spinner"></div>
-        <p>Loading "{{ summary.title }}"…</p>
-      </div>
-
-      <div v-else-if="state === 'error'" class="reader-error">
-        <p class="error-headline">Could not load this article.</p>
-        <p class="error-detail">{{ errorMsg }}</p>
-        <a
-          :href="wikiUrl"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="error-link"
-        >
-          Open on Wikipedia ↗
-        </a>
-      </div>
-
-      <div v-else class="reader-layout">
-        <TocSidebar :items="toc" />
-
-        <article class="reader-article" ref="articleRef">
-          <div v-if="viewMode === 'html'" class="article-hero">
-            <div class="article-hero-label">
-              <span class="hero-line" aria-hidden="true"></span>
-              Wikipedia · {{ summary.lang?.toUpperCase() ?? "EN" }}
-            </div>
-            <h1
-              class="article-hero-title"
-              v-html="summary.displaytitle || summary.title"
-            />
-            <p v-if="summary.description" class="article-hero-desc-text">
-              {{ summary.description }}
-            </p>
-          </div>
-
-          <div
-            v-if="viewMode === 'html'"
-            class="wiki-content"
-            v-html="processedHtml"
-          />
-          <div v-else class="markdown-content">
-            <pre>{{ markdownContent }}</pre>
-          </div>
-        </article>
-      </div>
-    </div>
-
-    <!-- Keyboard Shortcuts Modal -->
+    <!-- Pomodoro Learning View Overlay -->
     <Transition name="fade">
-      <div
-        v-if="showShortcuts"
-        class="shortcuts-modal"
-        @click.self="showShortcuts = false"
-      >
-        <div class="shortcuts-card">
-          <div class="shortcuts-header">
-            <h2>Keyboard Shortcuts</h2>
-            <button class="close-btn" @click="showShortcuts = false">
-              &times;
-            </button>
-          </div>
-          <div class="shortcuts-grid">
-            <div class="shortcut-item"><kbd>←</kbd><span>Go Back</span></div>
-            <div class="shortcut-item">
-              <kbd>Backspace</kbd><span>Go Back</span>
-            </div>
-            <div class="shortcut-item">
-              <kbd>Esc</kbd><span>Exit Fullscreen / Back</span>
-            </div>
-            <div class="shortcut-item">
-              <kbd>F</kbd><span>Toggle Fullscreen</span>
-            </div>
-            <div class="shortcut-item">
-              <kbd>M</kbd><span>Toggle Markdown/HTML</span>
-            </div>
-            <div class="shortcut-item">
-              <kbd>D</kbd><span>Download Markdown</span>
-            </div>
-            <div class="shortcut-item">
-              <kbd>F1</kbd><span>Show Shortcuts</span>
-            </div>
-            <div class="shortcut-item">
-              <kbd>Shift + ?</kbd><span>Show Shortcuts</span>
-            </div>
-          </div>
-          <p class="shortcuts-footer">Press <kbd>Esc</kbd> to close</p>
+      <PomodoroLearningView
+        v-if="showPomodoro"
+        :initial-article="summary"
+        @complete="
+          showPomodoro = false;
+          $emit('back');
+        "
+        @back="showPomodoro = false"
+      />
+    </Transition>
+
+    <template v-if="!showPomodoro">
+      <!-- Reading progress bar -->
+      <div class="progress-bar-container">
+        <div
+          class="progress-bar-fill"
+          :style="{ width: scrollProgress + '%' }"
+        ></div>
+      </div>
+
+      <!-- Reader top bar -->
+      <div class="reader-bar">
+        <button
+          class="back-btn"
+          @click="$emit('back')"
+          aria-label="Back to explore"
+        >
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.2"
+          >
+            <polyline points="15 18 9 12 15 6" />
+          </svg>
+          <span class="hide-mobile">Back</span>
+        </button>
+
+        <div class="reader-bar-title" :title="summary.title">
+          {{ summary.title }}
+        </div>
+
+        <div class="reader-bar-actions">
+          <!-- Pomodoro button -->
+          <button
+            class="bar-btn"
+            @click="startPomodoro"
+            title="Start Learning Mode (L)"
+          >
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <polyline points="12 6 12 12 16 14" />
+            </svg>
+            <span class="hide-mobile">Learn</span>
+          </button>
+
+          <!-- View Mode Toggle -->
+          <button
+            class="bar-btn"
+            @click="toggleViewMode"
+            :class="{ active: viewMode === 'markdown' }"
+            title="Toggle Markdown/HTML (M)"
+          >
+            <span class="hide-mobile">{{
+              viewMode === "html" ? "MD" : "HTML"
+            }}</span>
+            <span class="show-mobile">MD</span>
+          </button>
+
+          <!-- Download Markdown -->
+          <button
+            class="bar-btn"
+            @click="downloadMarkdown"
+            title="Export to Obsidian MD (D)"
+          >
+            <svg
+              width="11"
+              height="11"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            <span class="hide-mobile">Export</span>
+          </button>
+
+          <!-- Fullscreen Toggle -->
+          <button
+            class="bar-btn"
+            @click="toggleFullscreen"
+            :class="{ active: isFullscreen }"
+            title="Toggle Fullscreen (F)"
+          >
+            <svg
+              v-if="!isFullscreen"
+              width="11"
+              height="11"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"
+              />
+            </svg>
+            <svg
+              v-else
+              width="11"
+              height="11"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"
+              />
+            </svg>
+          </button>
+
+          <!-- Copy URL -->
+          <button
+            class="bar-btn"
+            :class="{ copied }"
+            @click="copyUrl"
+            title="Copy URL"
+          >
+            <svg
+              v-if="!copied"
+              width="11"
+              height="11"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <rect x="9" y="9" width="13" height="13" rx="2" />
+              <path
+                d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"
+              />
+            </svg>
+            <svg
+              v-else
+              width="11"
+              height="11"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <polyline points="20 6 9 12 4 12" />
+              <polyline points="20 6 9 18 4 12" />
+            </svg>
+          </button>
+
+          <!-- Help/Shortcuts -->
+          <button
+            class="bar-btn help-btn"
+            @click="toggleShortcuts"
+            title="Shortcuts (F1 / Shift+?)"
+          >
+            <span>?</span>
+          </button>
         </div>
       </div>
-    </Transition>
+
+      <!-- Main Content -->
+      <div class="reader-body">
+        <div v-if="state === 'loading'" class="reader-loading">
+          <div class="spinner"></div>
+          <p>Loading "{{ summary.title }}"…</p>
+        </div>
+
+        <div v-else-if="state === 'error'" class="reader-error">
+          <p class="error-headline">Could not load this article.</p>
+          <p class="error-detail">{{ errorMsg }}</p>
+          <a
+            :href="wikiUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="error-link"
+          >
+            Open on Wikipedia ↗
+          </a>
+        </div>
+
+        <div v-else class="reader-layout">
+          <TocSidebar :items="toc" />
+
+          <article
+            class="reader-article"
+            ref="articleRef"
+            @click="attachFallbackLinkHandlers"
+          >
+            <div v-if="viewMode === 'html'" class="article-hero">
+              <div class="article-hero-label">
+                <span class="hero-line" aria-hidden="true"></span>
+                Wikipedia · {{ summary.lang?.toUpperCase() ?? "EN" }}
+              </div>
+              <h1
+                class="article-hero-title"
+                v-html="summary.displaytitle || summary.title"
+              />
+              <p v-if="summary.description" class="article-hero-desc-text">
+                {{ summary.description }}
+              </p>
+            </div>
+
+            <div
+              v-if="viewMode === 'html'"
+              class="wiki-content"
+              v-html="processedHtml"
+            />
+            <div v-else class="markdown-content">
+              <pre>{{ markdownContent }}</pre>
+            </div>
+          </article>
+        </div>
+      </div>
+
+      <!-- Back to top button -->
+      <Transition name="fade">
+        <button
+          v-if="showBackToTop"
+          class="back-to-top"
+          @click="scrollToTop"
+          aria-label="Back to top"
+        >
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+          >
+            <polyline points="18 15 12 9 6 15" />
+          </svg>
+        </button>
+      </Transition>
+
+      <!-- Keyboard Shortcuts Modal -->
+      <Transition name="fade">
+        <div
+          v-if="showShortcuts"
+          class="shortcuts-modal"
+          @click.self="showShortcuts = false"
+        >
+          <div class="shortcuts-card">
+            <div class="shortcuts-header">
+              <h2>Keyboard Shortcuts</h2>
+              <button class="close-btn" @click="showShortcuts = false">
+                &times;
+              </button>
+            </div>
+            <div class="shortcuts-grid">
+              <div class="shortcut-item">
+                <kbd>←</kbd>/<kbd>Backspace</kbd><span>Go Back</span>
+              </div>
+              <div class="shortcut-item">
+                <kbd>Esc</kbd><span>Exit Fullscreen / Back</span>
+              </div>
+              <div class="shortcut-item">
+                <kbd>F</kbd><span>Toggle Fullscreen</span>
+              </div>
+              <div class="shortcut-item">
+                <kbd>M</kbd><span>Toggle Markdown/HTML</span>
+              </div>
+              <div class="shortcut-item">
+                <kbd>L</kbd><span>Start Learning Mode</span>
+              </div>
+              <div class="shortcut-item">
+                <kbd>D</kbd><span>Download Markdown</span>
+              </div>
+              <div class="shortcut-item">
+                <kbd>F1</kbd><span>Show Shortcuts</span>
+              </div>
+              <div class="shortcut-item">
+                <kbd>Shift</kbd> + <kbd>?</kbd><span>Show Shortcuts</span>
+              </div>
+            </div>
+            <p class="shortcuts-footer">Press <kbd>Esc</kbd> to close</p>
+          </div>
+        </div>
+      </Transition>
+    </template>
   </div>
 </template>
 
@@ -439,6 +558,22 @@ async function copyUrl() {
 }
 .fullscreen-active {
   padding-top: var(--reader-bar-h);
+}
+
+/* Progress bar */
+.progress-bar-container {
+  position: fixed;
+  top: var(--nav-h);
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: transparent;
+  z-index: 350;
+}
+.progress-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.1s ease;
 }
 
 .reader-bar {
@@ -645,6 +780,35 @@ async function copyUrl() {
   border-color: var(--accent);
 }
 
+/* Back to top button */
+.back-to-top {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: none;
+  color: #0e0e0e;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  transition:
+    transform 0.15s,
+    background 0.15s;
+  z-index: 400;
+}
+.back-to-top:hover {
+  background: #e8c97a;
+  transform: scale(1.05);
+}
+.back-to-top:active {
+  transform: scale(0.95);
+}
+
 .shortcuts-modal {
   position: fixed;
   inset: 0;
@@ -728,6 +892,12 @@ kbd {
   }
   .shortcuts-grid {
     grid-template-columns: 1fr;
+  }
+  .back-to-top {
+    bottom: 1rem;
+    right: 1rem;
+    width: 40px;
+    height: 40px;
   }
 }
 </style>
