@@ -110,11 +110,7 @@ function completeGuide() {
   cleanupHighlight();
 }
 
-function resetGuide() {
-  localStorage.removeItem(GUIDE_SEEN_KEY);
-  localStorage.removeItem(`${GUIDE_SEEN_KEY}:version`);
-  hasSeenGuide.value = false;
-}
+// resetGuide is not used – removed
 
 const currentStep = computed(() => GUIDE_STEPS[currentStepIndex.value]);
 const progress = computed(
@@ -127,7 +123,7 @@ function highlightElement() {
 
   if (!currentStep.value?.highlight) return;
 
-  const { selector, position = "top" } = currentStep.value.highlight;
+  const { selector } = currentStep.value.highlight; // position not used, omit
   const el = document.querySelector(selector) as HTMLElement;
 
   if (el) {

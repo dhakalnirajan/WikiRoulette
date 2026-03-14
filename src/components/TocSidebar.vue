@@ -226,7 +226,7 @@ onUnmounted(() => {
     class="mobile-toc-toggle"
     @click="toggleMobileToc"
     aria-label="Open table of contents"
-    aria-expanded="showMobileToc"
+    :aria-expanded="showMobileToc"
     :aria-controls="'mobile-toc-panel'"
   >
     <svg
