@@ -110,7 +110,7 @@ function completeGuide() {
   cleanupHighlight();
 }
 
-// resetGuide is not used – removed
+// resetGuide removed – not used
 
 const currentStep = computed(() => GUIDE_STEPS[currentStepIndex.value]);
 const progress = computed(

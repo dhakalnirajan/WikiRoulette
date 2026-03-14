@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { WikiSummary } from "@/types/wiki";
 
-// Define props without a variable – they are automatically available in template
+// Props are automatically available in the template
 defineProps<{
   summary: WikiSummary;
   isCurrent?: boolean;
