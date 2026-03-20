@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from "vue";
+import { ref, watch, onMounted, onUnmounted } from "vue";
 import type { WikiSummary } from "@/types/wiki";
 
 const props = defineProps<{
@@ -13,9 +13,7 @@ let interval: number | null = null;
 
 function extractFactsFromExtract(text: string): string[] {
   if (!text) return [];
-  // Split into sentences (simple regex)
   const sentences = text.split(/(?<=[.!?])\s+/);
-  // Filter sentences: length between 30 and 180 characters, not starting with common patterns
   return sentences
     .filter((s) => {
       const trimmed = s.trim();

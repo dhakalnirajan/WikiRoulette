@@ -11,14 +11,14 @@ import {
 } from "vue";
 import TocSidebar from "./TocSidebar.vue";
 import PomodoroLearningView from "./PomodoroLearningView.vue";
+import ArticleFacts from "./ArticleFacts.vue";
 import {
   fetchArticleHTML,
   htmlToObsidianMarkdown,
   cancelRequest,
 } from "@/composables/useWikiApi";
 import { processArticleHTML } from "@/composables/useArticleProcessor";
-import type { WikiSummary, TocItem, ProcessedContent } from "@/types/wiki";
-import ArticleFacts from "./ArticleFacts.vue";
+import type { WikiSummary, TocItem } from "@/types/wiki";
 
 const props = defineProps<{ summary: WikiSummary }>();
 const emit = defineEmits<{

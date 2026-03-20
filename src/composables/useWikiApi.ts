@@ -1,10 +1,8 @@
 import type { WikiSummary } from "@/types/wiki";
 import {
   API_BASE_REST,
-  API_BASE_ACTION,
   REQUEST_TIMEOUT,
   MAX_RETRIES,
-  RANDOM_RETRY_DELAY,
   CACHE_TTL,
 } from "@/config";
 

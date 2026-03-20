@@ -1,8 +1,7 @@
-import { ref, computed, onUnmounted, shallowRef, type ShallowRef } from "vue";
+import { ref, computed, onUnmounted, shallowRef } from "vue";
 import type { WikiSummary, ProcessedContent } from "@/types/wiki";
 import { fetchArticleHTML, cancelRequest } from "./useWikiApi";
 import { processArticleHTML } from "./useArticleProcessor";
-import { usePomodoroSessionStorage } from "./useStorage";
 import { POMODORO_CONFIG } from "@/config";
 
 // ============================================================================
@@ -28,6 +27,13 @@ export interface LearningPhase {
   reflectDuration: number;
   description: string;
   prompts: string[];
+}
+
+export interface LearningSession {
+  articleTitle: string;
+  round: number;
+  notes: Record<string, string>;
+  timestamp: number;
 }
 
 // ============================================================================
@@ -94,7 +100,6 @@ class TimerManager {
 export function usePomodoroLearning() {
   const timerManager = new TimerManager();
 
-  // Use shallowRef for large HTML content
   const processedContent = shallowRef<ProcessedContent | null>(null);
 
   const isActive = ref(false);
@@ -106,15 +111,14 @@ export function usePomodoroLearning() {
   const error = ref<string | null>(null);
   const completedRounds = ref(0);
 
-  // Storage for session recovery (optional)
-  const { state: savedSession } = usePomodoroSessionStorage();
-
   // ==========================================================================
   // Computed Properties
   // ==========================================================================
   const currentPhase = computed<LearningPhase | null>(() => {
     if (currentRound.value === "final") return null;
-    return POMODORO_CONFIG[currentRound.value as number] ?? null;
+    const round = currentRound.value;
+    if (round !== 1 && round !== 2) return null;
+    return POMODORO_CONFIG[round] ?? null;
   });
 
   const isBuffering = computed(() => state.value.status === "buffer");

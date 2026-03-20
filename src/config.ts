@@ -13,8 +13,15 @@ export const CACHE_TTL = 1000 * 60 * 5; // 5 minutes
 // History
 export const MAX_HISTORY_ENTRIES = 100;
 
-// Pomodoro Timings (seconds)
-export const POMODORO_CONFIG = {
+export interface LearningPhase {
+  round: number;
+  readDuration: number;
+  reflectDuration: number;
+  description: string;
+  prompts: string[];
+}
+
+export const POMODORO_CONFIG: Record<1 | 2, LearningPhase> = {
   1: {
     round: 1,
     readDuration: 60,

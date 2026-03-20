@@ -1,5 +1,6 @@
 import { ref, watch, onMounted, onUnmounted, type Ref } from "vue";
 import { STORAGE_KEYS } from "@/config";
+import type { LearningSession } from "./usePomodoroLearning";
 
 export type StorageKey = (typeof STORAGE_KEYS)[keyof typeof STORAGE_KEYS];
 
@@ -125,7 +126,7 @@ export const useGuideStorage = () => {
 };
 
 export const usePomodoroSessionStorage = () =>
-  useStorage<Partial<import("./usePomodoroLearning").LearningSession> | null>({
+  useStorage<Partial<LearningSession> | null>({
     key: STORAGE_KEYS.POMODORO_SESSION,
     defaultValue: null,
     sync: false,
