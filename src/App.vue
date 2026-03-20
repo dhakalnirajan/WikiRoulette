@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from "vue";
+import { ref, onMounted, onUnmounted, nextTick } from "vue";
 import AppNav from "@/components/AppNav.vue";
 import HomeView from "@/components/HomeView.vue";
 import ArticleReader from "@/components/ArticleReader.vue";
@@ -9,46 +9,39 @@ import { fetchSummaryByTitle } from "@/composables/useWikiApi";
 import { useHistory } from "@/composables/useHistory";
 import type { WikiSummary } from "@/types/wiki";
 
-// Added 'pomodoro' to View type
 type View = "home" | "reader" | "pomodoro";
 
 const view = ref<View>("home");
 const readerSummary = ref<WikiSummary | null>(null);
-// Added pomodoroArticle ref for Learning Mode
 const pomodoroArticle = ref<WikiSummary | null>(null);
 const homeRef = ref<InstanceType<typeof HomeView> | null>(null);
-
-// First-time guide composable
 const guideRef = ref<InstanceType<typeof FirstTimeGuide> | null>(null);
-
 const { current, totalCount } = useHistory();
+const isAppReady = ref(false);
 
-const goHome = () => {
+const goHome = (): void => {
   view.value = "home";
 };
 
-const openReader = (s: WikiSummary) => {
+const openReader = (s: WikiSummary): void => {
   readerSummary.value = s;
   view.value = "reader";
 };
 
-// Added openPomodoro function for Learning Mode
-const openPomodoro = (s: WikiSummary) => {
-  pomodoroArticle.value = s;
+const openPomodoro = (s: WikiSummary): void => {
+  pomodoroArticle.value = { ...s };
   view.value = "pomodoro";
 };
 
-const navigateToArticle = async (title: string) => {
+const navigateToArticle = async (title: string): Promise<void> => {
   try {
     const summary = await fetchSummaryByTitle(title);
-    // Route to current view mode (reader or pomodoro)
     if (view.value === "pomodoro") {
       pomodoroArticle.value = summary;
     } else {
       openReader(summary);
     }
   } catch {
-    // Removed trailing spaces in fallback URL
     const fallback: WikiSummary = {
       title,
       displaytitle: title,
@@ -74,7 +67,6 @@ const navigateToArticle = async (title: string) => {
       tid: "",
       timestamp: "",
     };
-    // Route fallback to current view mode
     if (view.value === "pomodoro") {
       pomodoroArticle.value = fallback;
     } else {
@@ -83,56 +75,102 @@ const navigateToArticle = async (title: string) => {
   }
 };
 
-// Unified keyboard handler with guide support
-const handleKeydown = (e: KeyboardEvent) => {
-  // Let guide handle its own keys first
-  if (guideRef.value?.handleKeydown) {
-    guideRef.value.handleKeydown(e);
-    if (e.defaultPrevented) return;
+const handleKeydown = (e: KeyboardEvent): void => {
+  const target = e.target as HTMLElement;
+  if (
+    target.tagName === "INPUT" ||
+    target.tagName === "TEXTAREA" ||
+    target.tagName === "SELECT"
+  ) {
+    return;
   }
 
   if (
-    ["INPUT", "TEXTAREA", "SELECT"].includes((e.target as HTMLElement).tagName)
-  )
+    (e.ctrlKey || e.metaKey) &&
+    (e.key.toLowerCase() === "r" || e.key === "F5")
+  ) {
     return;
+  }
 
-  // Global shortcuts only work in home view
+  if (guideRef.value && guideRef.value.isInitialized) {
+    const guideActive = guideRef.value.isActive;
+    if (guideActive && guideRef.value.handleKeydown) {
+      guideRef.value.handleKeydown(e);
+      if (e.defaultPrevented) return;
+    }
+  }
+
+  if (!isAppReady.value) return;
+
   if (view.value === "home") {
     if (e.key === "ArrowRight" || e.key === " ") {
       e.preventDefault();
       homeRef.value?.spin();
+      return;
     }
-    if ((e.key === "r" || e.key === "R") && current.value) {
-      openReader(current.value.summary);
-    }
-    // L key opens Pomodoro Learning Mode (not reader)
-    if (e.key.toLowerCase() === "l" && current.value) {
+
+    if (e.key === "ArrowLeft") {
       e.preventDefault();
-      openPomodoro(current.value.summary);
+      homeRef.value?.prev?.();
+      return;
+    }
+
+    if (
+      e.key.toLowerCase() === "r" &&
+      !e.ctrlKey &&
+      !e.metaKey &&
+      !e.altKey &&
+      current.value?.summary
+    ) {
+      e.preventDefault();
+      openReader(current.value.summary);
+      return;
+    }
+
+    if (
+      e.key.toLowerCase() === "l" &&
+      !e.ctrlKey &&
+      !e.metaKey &&
+      !e.altKey &&
+      current.value?.summary
+    ) {
+      e.preventDefault();
+      openPomodoro({ ...current.value.summary });
+      return;
+    }
+  }
+
+  if (e.key === "F1" || (e.key === "?" && e.shiftKey)) {
+    e.preventDefault();
+    if (homeRef.value && homeRef.value.showShortcuts !== undefined) {
+      homeRef.value.showShortcuts = true;
     }
   }
 };
 
-onMounted(() => {
+onMounted(async () => {
+  await nextTick();
   document.addEventListener("keydown", handleKeydown);
-  homeRef.value?.spin();
-
-  // Check if we should show the first-time guide
-  if (guideRef.value?.checkGuideStatus()) {
-    setTimeout(() => {
-      guideRef.value?.startGuide();
-    }, 1000);
-  }
+  isAppReady.value = true;
+  homeRef.value?.spin?.();
+  setTimeout(() => {
+    if (guideRef.value && guideRef.value.isInitialized) {
+      const shouldShow = guideRef.value.checkGuideStatus();
+      if (shouldShow) {
+        guideRef.value.startGuide();
+      }
+    }
+  }, 500);
 });
 
 onUnmounted(() => {
+  isAppReady.value = false;
   document.removeEventListener("keydown", handleKeydown);
 });
 </script>
 
 <template>
   <div id="wikiroulette">
-    <!-- First-time guide overlay -->
     <FirstTimeGuide ref="guideRef" />
 
     <AppNav
@@ -143,7 +181,6 @@ onUnmounted(() => {
     />
 
     <Transition name="fade" mode="out-in">
-      <!-- Home View -->
       <HomeView
         v-if="view === 'home'"
         ref="homeRef"
@@ -151,7 +188,6 @@ onUnmounted(() => {
         @pomodoro="openPomodoro"
       />
 
-      <!-- Article Reader View (Free Reading Mode) -->
       <ArticleReader
         v-else-if="view === 'reader' && readerSummary"
         :summary="readerSummary"
@@ -159,9 +195,9 @@ onUnmounted(() => {
         @navigate="navigateToArticle"
       />
 
-      <!-- Pomodoro Learning View (only shown when needed) -->
       <PomodoroLearningView
         v-else-if="view === 'pomodoro' && pomodoroArticle"
+        :key="pomodoroArticle.pageid"
         :initial-article="pomodoroArticle"
         @complete="goHome"
         @back="goHome"

@@ -13,14 +13,25 @@ const emit = defineEmits<{
 }>();
 
 const {
-  session,
+  // State refs (no "session" object)
+  currentRound,
+  article,
+  notes,
+  processedContent,
+  isLoading,
+  error,
+  // Phase booleans
   currentPhase,
   isBuffering,
   isReading,
   isReflecting,
   isPostStudy,
   isPaused,
+  // Timer
+  timeRemaining,
+  bufferCountdown,
   formattedTime,
+  // Actions
   startSession,
   endSession,
   updateNotes,
@@ -109,7 +120,6 @@ function handleExport() {
 async function downloadNotes() {
   try {
     await copyNotesToClipboard();
-    // Show success feedback
     const btn = document.querySelector(".action-btn.primary");
     if (btn) {
       const originalText = btn.textContent;
@@ -123,22 +133,27 @@ async function downloadNotes() {
   }
 }
 
-// Get random prompt for reflection phase
+// Safe computed for prompt (uses currentPhase and currentRound)
 const currentPrompt = computed(() => {
   if (!currentPhase.value) return "";
   const prompts = currentPhase.value.prompts;
-  const round = session.value.currentRound;
+  if (!prompts || prompts.length === 0) return "";
+  const round = currentRound.value === "final" ? 2 : currentRound.value;
   return prompts[(round === 1 ? 0 : 1) % prompts.length];
 });
 
-// Wiki URL for reference link
-const wikiUrl = computed(
-  () =>
-    session.value.article?.content_urls?.desktop?.page ??
-    (session.value.article
-      ? `https://en.wikipedia.org/wiki/${encodeURIComponent(session.value.article.title.replace(/ /g, "_"))}`
-      : ""),
-);
+// Safe wiki URL
+const wikiUrl = computed(() => {
+  const articleData = article.value;
+  return (
+    articleData?.content_urls?.desktop?.page ??
+    (articleData
+      ? `https://en.wikipedia.org/wiki/${encodeURIComponent(
+          articleData.title.replace(/ /g, "_"),
+        )}`
+      : "")
+  );
+});
 </script>
 
 <template>
@@ -168,7 +183,11 @@ const wikiUrl = computed(
 
       <div class="phase-info">
         <span class="phase-name">
-          {{ isPostStudy ? "Free Review" : `Round ${session.currentRound}` }}
+          {{
+            isPostStudy
+              ? "Free Review"
+              : `Round ${currentRound === "final" ? 2 : currentRound}`
+          }}
           <span v-if="isPaused" class="paused-badge">(Paused)</span>
         </span>
         <span class="phase-desc" v-if="currentPhase">
@@ -183,7 +202,13 @@ const wikiUrl = computed(
           <div
             class="progress-fill"
             :style="{
-              width: `${(session.timeRemaining / (currentPhase?.readDuration || currentPhase?.reflectDuration || 1)) * 100}%`,
+              width: `${
+                ((timeRemaining ?? 0) /
+                  (currentPhase?.readDuration ||
+                    currentPhase?.reflectDuration ||
+                    1)) *
+                100
+              }%`,
             }"
           ></div>
         </div>
@@ -226,30 +251,63 @@ const wikiUrl = computed(
 
     <!-- Main Content Area -->
     <main class="pomodoro-content">
-      <!-- BUFFER STATE: 3-second countdown overlay -->
+      <!-- BUFFER STATE: Enhanced countdown overlay -->
       <Transition name="fade">
         <div v-if="isBuffering" class="buffer-overlay">
-          <div class="buffer-countdown">
-            <div class="countdown-number">{{ session.bufferCountdown }}</div>
-            <p>Get ready to read...</p>
-            <p class="buffer-hint">Bell will sound when ready</p>
+          <div class="buffer-card">
+            <div class="buffer-ring-container">
+              <svg
+                class="buffer-ring"
+                width="120"
+                height="120"
+                viewBox="0 0 120 120"
+              >
+                <circle
+                  cx="60"
+                  cy="60"
+                  r="54"
+                  fill="none"
+                  stroke="var(--accent-glow)"
+                  stroke-width="2"
+                />
+                <circle
+                  class="buffer-ring-progress"
+                  cx="60"
+                  cy="60"
+                  r="54"
+                  fill="none"
+                  stroke="var(--accent)"
+                  stroke-width="4"
+                  stroke-linecap="round"
+                  :stroke-dasharray="2 * Math.PI * 54"
+                  :stroke-dashoffset="
+                    2 * Math.PI * 54 * (1 - (bufferCountdown ?? 3) / 3)
+                  "
+                  transform="rotate(-90 60 60)"
+                />
+              </svg>
+              <div class="buffer-number">{{ bufferCountdown ?? 3 }}</div>
+            </div>
+            <div class="buffer-message">
+              <span class="buffer-icon">🔔</span>
+              <p>Get ready to read...</p>
+              <span class="buffer-hint">Bell will sound when ready</span>
+            </div>
           </div>
         </div>
       </Transition>
 
       <!-- LOADING / ERROR STATE -->
-      <div v-if="session.isLoading || session.error" class="reader-loading">
-        <div v-if="session.isLoading" class="spinner"></div>
-        <p>{{ session.error || `Loading "${session.article?.title}"…` }}</p>
+      <div v-if="isLoading || error" class="reader-loading">
+        <div v-if="isLoading" class="spinner"></div>
+        <p>{{ error || `Loading "${article?.title}"…` }}</p>
       </div>
 
       <!-- READING STATE: Article content -->
       <Transition name="fade">
         <section
           v-if="
-            (isReading || isPostStudy || isPaused) &&
-            session.processedContent &&
-            !session.error
+            (isReading || isPostStudy || isPaused) && processedContent && !error
           "
           class="read-section"
           :class="{ paused: isPaused }"
@@ -259,22 +317,19 @@ const wikiUrl = computed(
             <div class="article-hero">
               <div class="article-hero-label">
                 <span class="hero-line" aria-hidden="true"></span>
-                Wikipedia · {{ session.article?.lang?.toUpperCase() ?? "EN" }}
+                Wikipedia · {{ article?.lang?.toUpperCase() ?? "EN" }}
               </div>
               <h1
                 class="article-hero-title"
-                v-html="session.article?.displaytitle || session.article?.title"
+                v-html="article?.displaytitle || article?.title"
               />
-              <p
-                v-if="session.article?.description"
-                class="article-hero-desc-text"
-              >
-                {{ session.article.description }}
+              <p v-if="article?.description" class="article-hero-desc-text">
+                {{ article.description }}
               </p>
             </div>
 
             <!-- Processed Wikipedia content -->
-            <div class="wiki-content" v-html="session.processedContent.html" />
+            <div class="wiki-content" v-html="processedContent.html" />
           </article>
 
           <!-- Paused overlay -->
@@ -324,7 +379,10 @@ const wikiUrl = computed(
 
             <textarea
               ref="notesRef"
-              :value="session.notes[`round-${session.currentRound}`] || ''"
+              :value="
+                notes[`round-${currentRound === 'final' ? 2 : currentRound}`] ||
+                ''
+              "
               @input="updateNotes(($event.target as HTMLTextAreaElement).value)"
               class="notepad-editor"
               placeholder="Start writing your thoughts..."
@@ -349,7 +407,7 @@ const wikiUrl = computed(
         <div class="complete-card">
           <h2>Session Complete!</h2>
           <p>You've completed your learning session for:</p>
-          <h3 class="complete-title">{{ session.article?.title }}</h3>
+          <h3 class="complete-title">{{ article?.title }}</h3>
 
           <div class="complete-actions">
             <button class="action-btn primary" @click="handleExport">
@@ -570,13 +628,6 @@ const wikiUrl = computed(
   background: #e8c97a;
 }
 
-.buffer-hint {
-  font-size: 0.8rem;
-  color: var(--accent);
-  margin-top: 0.5rem;
-  opacity: 0.8;
-}
-
 .slide-down-enter-active,
 .slide-down-leave-active {
   transition: all 0.2s ease;
@@ -699,20 +750,161 @@ const wikiUrl = computed(
   position: relative;
 }
 
-/* Buffer Overlay */
+/* Enhanced Buffer Overlay */
 .buffer-overlay {
-  position: absolute;
+  position: fixed;
   inset: 0;
-  background: rgba(12, 12, 12, 0.95);
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(8px);
   z-index: 1000;
   display: flex;
   align-items: center;
   justify-content: center;
+  animation: fadeIn 0.2s ease-out;
 }
 
-.buffer-countdown {
+.buffer-card {
   text-align: center;
+  background: var(--surface);
+  border-radius: 2rem;
+  padding: 2rem 2rem 1.8rem;
+  box-shadow: 0 20px 35px rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--border);
+  max-width: 320px;
+  width: 90%;
+}
+
+.buffer-ring-container {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  margin: 0 auto 1.2rem;
+}
+
+.buffer-ring {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.buffer-ring-progress {
+  transition: stroke-dashoffset 0.2s linear;
+}
+
+.buffer-number {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-family: var(--font-mono);
+  font-size: 3rem;
+  font-weight: 700;
+  color: var(--accent);
+  line-height: 1;
+  animation: pulseCount 0.6s ease-in-out infinite alternate;
+}
+
+.buffer-message {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.buffer-icon {
+  font-size: 1.8rem;
+  margin-bottom: 0.25rem;
+  display: inline-block;
+  animation: gentleSwing 0.8s ease-in-out infinite;
+}
+
+.buffer-message p {
+  font-family: var(--font-sans);
+  font-size: 1.2rem;
+  font-weight: 500;
   color: var(--text);
+  margin: 0;
+}
+
+.buffer-hint {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    backdrop-filter: blur(0);
+  }
+  to {
+    opacity: 1;
+    backdrop-filter: blur(8px);
+  }
+}
+
+@keyframes pulseCount {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.8;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.2);
+    opacity: 1;
+  }
+}
+
+@keyframes gentleSwing {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  50% {
+    transform: rotate(12deg);
+  }
+}
+
+/* Mobile adjustments for buffer overlay */
+@media (max-width: 768px) {
+  .buffer-card {
+    padding: 1.5rem;
+    border-radius: 1.5rem;
+  }
+
+  .buffer-ring-container {
+    width: 100px;
+    height: 100px;
+  }
+
+  .buffer-number {
+    font-size: 2.5rem;
+  }
+
+  .buffer-message p {
+    font-size: 1rem;
+  }
+
+  .buffer-icon {
+    font-size: 1.5rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .buffer-ring-container {
+    width: 80px;
+    height: 80px;
+  }
+
+  .buffer-number {
+    font-size: 2rem;
+  }
+
+  .buffer-message p {
+    font-size: 0.9rem;
+  }
 }
 
 .countdown-number {

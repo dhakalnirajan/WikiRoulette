@@ -1,26 +1,16 @@
 import type { WikiSummary } from "@/types/wiki";
+import {
+  API_BASE_REST,
+  API_BASE_ACTION,
+  REQUEST_TIMEOUT,
+  MAX_RETRIES,
+  RANDOM_RETRY_DELAY,
+  CACHE_TTL,
+} from "@/config";
 
 // ============================================================================
-// Configuration & Constants
+// Types & Errors
 // ============================================================================
-
-const BASE_REST = "https://en.wikipedia.org/api/rest_v1";
-const BASE_ACTION = "https://en.wikipedia.org/w/api.php";
-const CACHE_TTL = 1000 * 60 * 5; // 5 minutes
-const REQUEST_TIMEOUT = 10000; // 10 seconds
-const MAX_RETRIES = 2;
-
-// Simple in-memory cache with TTL
-interface CacheEntry<T> {
-  data: T;
-  timestamp: number;
-}
-const cache = new Map<string, CacheEntry<any>>();
-
-// ============================================================================
-// Custom Error Types
-// ============================================================================
-
 export class WikiApiError extends Error {
   status?: number;
   constructor(message: string, status?: number) {
@@ -31,10 +21,60 @@ export class WikiApiError extends Error {
 }
 
 // ============================================================================
-// Helper Functions
+// Request Cancellation Manager
 // ============================================================================
+class RequestCancellationManager {
+  private controllers = new Map<string, AbortController>();
 
-function getCacheKey(endpoint: string, params?: any): string {
+  getOrCreate(key: string): AbortController {
+    this.cancel(key);
+    const controller = new AbortController();
+    this.controllers.set(key, controller);
+    return controller;
+  }
+
+  cancel(key: string): void {
+    const controller = this.controllers.get(key);
+    if (controller) {
+      controller.abort();
+      this.controllers.delete(key);
+    }
+  }
+
+  cancelAll(): void {
+    this.controllers.forEach((controller) => controller.abort());
+    this.controllers.clear();
+  }
+
+  isActive(key: string): boolean {
+    return this.controllers.has(key);
+  }
+}
+
+const requestManager = new RequestCancellationManager();
+
+export function cancelRequest(key: string): void {
+  requestManager.cancel(key);
+}
+
+export function cancelAllRequests(): void {
+  requestManager.cancelAll();
+}
+
+// ============================================================================
+// Cache
+// ============================================================================
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+}
+
+const cache = new Map<string, CacheEntry<any>>();
+
+function getCacheKey(
+  endpoint: string,
+  params?: Record<string, unknown>,
+): string {
   return `${endpoint}-${JSON.stringify(params || {})}`;
 }
 
@@ -51,22 +91,26 @@ function setCached<T>(key: string, data: T): void {
   cache.set(key, { data, timestamp: Date.now() });
 }
 
+// ============================================================================
+// Fetch Helpers with Retry and Timeout
+// ============================================================================
 async function fetchWithTimeout(
   url: string,
   options: RequestInit = {},
   timeout = REQUEST_TIMEOUT,
 ): Promise<Response> {
   const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeout);
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+
   try {
     const response = await fetch(url, {
       ...options,
       signal: controller.signal,
     });
-    clearTimeout(id);
+    clearTimeout(timeoutId);
     return response;
   } catch (error) {
-    clearTimeout(id);
+    clearTimeout(timeoutId);
     if (error instanceof DOMException && error.name === "AbortError") {
       throw new WikiApiError(`Request timeout after ${timeout}ms`);
     }
@@ -80,11 +124,15 @@ async function fetchWithRetry(
   retries = MAX_RETRIES,
 ): Promise<Response> {
   let lastError: Error | null = null;
+
   for (let i = 0; i <= retries; i++) {
     try {
       return await fetchWithTimeout(url, options);
     } catch (error) {
       lastError = error as Error;
+      if (error instanceof DOMException && error.name === "AbortError") {
+        throw error; // Do not retry cancellations
+      }
       if (i === retries) break;
       // Exponential backoff
       await new Promise((resolve) =>
@@ -92,6 +140,7 @@ async function fetchWithRetry(
       );
     }
   }
+
   throw lastError;
 }
 
@@ -100,22 +149,44 @@ function encodeTitle(title: string): string {
 }
 
 // ============================================================================
+// Throttling for Random Requests (prevents rapid-fire API calls)
+// ============================================================================
+let lastRandomRequest = 0;
+const RANDOM_THROTTLE_MS = 500; // minimum 500ms between random spins
+
+async function throttleRandom(): Promise<void> {
+  const now = Date.now();
+  const timeSinceLast = now - lastRandomRequest;
+  if (timeSinceLast < RANDOM_THROTTLE_MS) {
+    await new Promise((resolve) =>
+      setTimeout(resolve, RANDOM_THROTTLE_MS - timeSinceLast),
+    );
+  }
+  lastRandomRequest = Date.now();
+}
+
+// ============================================================================
 // Public API Functions
 // ============================================================================
-
 export async function fetchRandomSummary(): Promise<WikiSummary> {
-  const url = `${BASE_REST}/page/random/summary`;
+  await throttleRandom();
+
+  const url = `${API_BASE_REST}/page/random/summary`;
+  // Do NOT cache random endpoint
+
   try {
     const res = await fetchWithRetry(url, {
       headers: { Accept: "application/json" },
     });
+
     if (!res.ok) {
       throw new WikiApiError(
         `Random summary failed: ${res.status}`,
         res.status,
       );
     }
-    const data = await res.json();
+
+    const data = (await res.json()) as WikiSummary;
     return data;
   } catch (error) {
     if (error instanceof WikiApiError) throw error;
@@ -129,21 +200,32 @@ export async function fetchSummaryByTitle(title: string): Promise<WikiSummary> {
   if (cached) return cached;
 
   const slug = encodeTitle(title);
-  const url = `${BASE_REST}/page/summary/${slug}`;
+  const url = `${API_BASE_REST}/page/summary/${slug}`;
+  const requestKey = `summary-${title}`;
+
   try {
+    const controller = requestManager.getOrCreate(requestKey);
+
     const res = await fetchWithRetry(url, {
       headers: { Accept: "application/json" },
+      signal: controller.signal,
     });
+
     if (res.status === 404) {
       throw new WikiApiError(`Article "${title}" not found`, 404);
     }
+
     if (!res.ok) {
       throw new WikiApiError(`Summary fetch failed: ${res.status}`, res.status);
     }
-    const data = await res.json();
+
+    const data = (await res.json()) as WikiSummary;
     setCached(cacheKey, data);
     return data;
   } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new WikiApiError(`Request cancelled for "${title}"`);
+    }
     if (error instanceof WikiApiError) throw error;
     throw new WikiApiError(`Network error: ${error}`);
   }
@@ -155,175 +237,38 @@ export async function fetchArticleHTML(title: string): Promise<string> {
   if (cached) return cached;
 
   const slug = encodeTitle(title);
-  const url = `${BASE_REST}/page/html/${slug}`;
+  const url = `${API_BASE_REST}/page/html/${slug}`;
+  const requestKey = `html-${title}`;
+
   try {
+    const controller = requestManager.getOrCreate(requestKey);
+
     const res = await fetchWithRetry(url, {
       headers: {
         Accept:
           'text/html; charset=utf-8; profile="https://www.mediawiki.org/wiki/Specs/HTML/2.8.0"',
       },
+      signal: controller.signal,
     });
+
     if (res.status === 404) {
       throw new WikiApiError(`Article "${title}" not found`, 404);
     }
+
     if (!res.ok) {
       throw new WikiApiError(
         `Failed to fetch article: ${res.status}`,
         res.status,
       );
     }
+
     const html = await res.text();
     setCached(cacheKey, html);
     return html;
   } catch (error) {
-    if (error instanceof WikiApiError) throw error;
-    throw new WikiApiError(`Network error: ${error}`);
-  }
-}
-
-export async function fetchMobileArticleHTML(title: string): Promise<string> {
-  const cacheKey = getCacheKey("mobile-html", { title });
-  const cached = getCached<string>(cacheKey);
-  if (cached) return cached;
-
-  const slug = encodeTitle(title);
-  const url = `${BASE_REST}/page/mobile-html/${slug}`;
-  try {
-    const res = await fetchWithRetry(url, {
-      headers: {
-        Accept:
-          'text/html; charset=utf-8; profile="https://www.mediawiki.org/wiki/Specs/Mobile-HTML/1.0.0"',
-      },
-    });
-    if (res.status === 404) {
-      throw new WikiApiError(`Article "${title}" not found`, 404);
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new WikiApiError(`Request cancelled for "${title}"`);
     }
-    if (!res.ok) {
-      throw new WikiApiError(
-        `Failed to fetch mobile article: ${res.status}`,
-        res.status,
-      );
-    }
-    const html = await res.text();
-    setCached(cacheKey, html);
-    return html;
-  } catch (error) {
-    if (error instanceof WikiApiError) throw error;
-    throw new WikiApiError(`Network error: ${error}`);
-  }
-}
-
-// ============================================================================
-// Supplemental API Functions (Action API)
-// ============================================================================
-
-export async function fetchArticleMedia(title: string): Promise<
-  Array<{
-    title: string;
-    section_id: number;
-    srcset?: string;
-    thumbnail?: { source: string; width: number; height: number };
-  }>
-> {
-  const cacheKey = getCacheKey("media", { title });
-  const cached = getCached<any>(cacheKey);
-  if (cached) return cached;
-
-  const cleanTitle = title.split("#")[0].split(":")[0].trim();
-  const slug = encodeTitle(cleanTitle);
-  const url = `${BASE_REST}/page/media-list/${slug}`;
-
-  try {
-    const res = await fetchWithRetry(url);
-    if (res.status === 404) {
-      // Not all articles have media lists; return empty array
-      setCached(cacheKey, []);
-      return [];
-    }
-    if (!res.ok) {
-      throw new WikiApiError(`Media fetch failed: ${res.status}`, res.status);
-    }
-    const data = await res.json();
-    const items = data.items ?? [];
-    setCached(cacheKey, items);
-    return items;
-  } catch (error) {
-    if (error instanceof WikiApiError) throw error;
-    console.warn(`Media fetch failed for "${title}":`, error);
-    return [];
-  }
-}
-
-export async function fetchArticleReferences(
-  title: string,
-): Promise<Array<{ id: string; content: string; backlinks: string[] }>> {
-  const cacheKey = getCacheKey("references", { title });
-  const cached = getCached<any>(cacheKey);
-  if (cached) return cached;
-
-  const params = new URLSearchParams({
-    action: "parse",
-    page: title,
-    prop: "references",
-    format: "json",
-    origin: "*",
-  });
-  const url = `${BASE_ACTION}?${params}`;
-
-  try {
-    const res = await fetchWithRetry(url);
-    if (!res.ok) {
-      throw new WikiApiError(
-        `References fetch failed: ${res.status}`,
-        res.status,
-      );
-    }
-    const data = await res.json();
-    const refs =
-      data?.parse?.references?.map((ref: any, i: number) => ({
-        id: `ref-${i}`,
-        content: ref.content?.["*"] || "",
-        backlinks: ref.backlinks || [],
-      })) ?? [];
-    setCached(cacheKey, refs);
-    return refs;
-  } catch (error) {
-    if (error instanceof WikiApiError) throw error;
-    throw new WikiApiError(`Network error: ${error}`);
-  }
-}
-
-export async function fetchArticleSections(
-  title: string,
-): Promise<
-  Array<{ line: string; number: string; anchor: string; level: string }>
-> {
-  const cacheKey = getCacheKey("sections", { title });
-  const cached = getCached<any>(cacheKey);
-  if (cached) return cached;
-
-  const params = new URLSearchParams({
-    action: "parse",
-    page: title,
-    prop: "sections",
-    format: "json",
-    origin: "*",
-  });
-  const url = `${BASE_ACTION}?${params}`;
-
-  try {
-    const res = await fetchWithRetry(url);
-    if (!res.ok) {
-      throw new WikiApiError(
-        `Sections fetch failed: ${res.status}`,
-        res.status,
-      );
-    }
-    const data = await res.json();
-    const sections = data?.parse?.sections ?? [];
-    setCached(cacheKey, sections);
-    return sections;
-  } catch (error) {
     if (error instanceof WikiApiError) throw error;
     throw new WikiApiError(`Network error: ${error}`);
   }
@@ -332,7 +277,6 @@ export async function fetchArticleSections(
 // ============================================================================
 // Utility Functions
 // ============================================================================
-
 export function hrefToTitle(href: string): string | null {
   if (href.startsWith("./"))
     return decodeURIComponent(href.slice(2).split("#")[0]).replace(/_/g, " ");
@@ -341,42 +285,16 @@ export function hrefToTitle(href: string): string | null {
   return null;
 }
 
-/**
- * Fix relative/malformed image URLs to absolute Wikipedia URLs
- */
 export function fixImageSrc(src: string): string {
   if (!src) return src;
-
-  // Already absolute with proper protocol
-  if (src.startsWith("http://") || src.startsWith("https://")) {
-    return src;
-  }
-
-  // Fix malformed protocol (e.g., "https//example.com")
-  if (src.startsWith("https//")) {
-    return "https://" + src.slice(7);
-  }
-  if (src.startsWith("http//")) {
-    return "http://" + src.slice(6);
-  }
-
-  // Protocol-relative URL (//example.com)
-  if (src.startsWith("//")) {
-    return "https:" + src;
-  }
-
-  // Root-relative URL (/path/to/image)
-  if (src.startsWith("/")) {
-    return "https://en.wikipedia.org" + src;
-  }
-
+  if (src.startsWith("http://") || src.startsWith("https://")) return src;
+  if (src.startsWith("https//")) return "https://" + src.slice(7);
+  if (src.startsWith("http//")) return "http://" + src.slice(6);
+  if (src.startsWith("//")) return "https:" + src;
+  if (src.startsWith("/")) return "https://en.wikipedia.org" + src;
   return src;
 }
 
-/**
- * Convert HTML to Obsidian-friendly Markdown (basic version)
- * Note: This is a simplified conversion; for production consider using a library like turndown.
- */
 export function htmlToObsidianMarkdown(
   html: string,
   title: string,
@@ -384,7 +302,6 @@ export function htmlToObsidianMarkdown(
 ): string {
   const date = new Date().toISOString().split("T")[0];
 
-  // Basic replacements (this can be extended)
   let md = html
     .replace(/<h1[^>]*>(.*?)<\/h1>/gi, "# $1\n")
     .replace(/<h2[^>]*>(.*?)<\/h2>/gi, "## $1\n")
@@ -413,7 +330,6 @@ export function htmlToObsidianMarkdown(
     .replace(/<img[^>]*src="([^"]*)"[^>]*>/gi, "![]($1)")
     .replace(/<[^>]+>/g, "");
 
-  // Clean up excessive newlines
   md = md.replace(/\n\s*\n\s*\n/g, "\n\n").trim();
 
   const frontmatter = `---
@@ -422,8 +338,7 @@ date: ${date}
 source: ${url}
 tags: [wikipedia, exported]
 ---
-
-`;
+\n`;
 
   return frontmatter + md;
 }

@@ -1,5 +1,5 @@
 import { fixImageSrc, hrefToTitle } from "@/composables/useWikiApi";
-import type { TocItem } from "@/types/wiki";
+import type { TocItem, ProcessedContent } from "@/types/wiki";
 
 const REMOVE_SELECTORS = [
   "script",
@@ -35,16 +35,11 @@ const REMOVE_SELECTORS = [
   ".plainlinks.hlist",
 ];
 
-export interface ProcessedArticle {
-  html: string;
-  toc: TocItem[];
-}
-
 export function processArticleHTML(
   rawHtml: string,
   _title: string,
   _onWikiLinkClick: (articleTitle: string) => void,
-): ProcessedArticle {
+): ProcessedContent {
   const parser = new DOMParser();
   const doc = parser.parseFromString(rawHtml, "text/html");
   const body = doc.body || doc.documentElement;
@@ -56,7 +51,7 @@ export function processArticleHTML(
     } catch (_) {}
   });
 
-  // Fix images with comprehensive URL handling
+  // Fix images
   body.querySelectorAll("img").forEach((img) => {
     let src = img.getAttribute("src") || "";
     src = fixImageSrc(src);
@@ -64,7 +59,6 @@ export function processArticleHTML(
     img.setAttribute("loading", "lazy");
     img.setAttribute("decoding", "async");
 
-    // Fix srcset (multiple image sources for responsive images)
     const srcset = img.getAttribute("srcset");
     if (srcset) {
       const fixedSrcset = srcset
@@ -77,7 +71,6 @@ export function processArticleHTML(
       img.setAttribute("srcset", fixedSrcset);
     }
 
-    // Remove tiny decoration icons (<22px)
     const w = parseInt(img.getAttribute("width") || "999");
     if (w < 22) {
       img.closest("figure, .thumb, span")?.remove() ?? img.remove();
@@ -112,8 +105,13 @@ export function processArticleHTML(
     }
   });
 
-  // Extract content
-  const mainContent = body.querySelector(".mw-parser-output") || body;
+  // Extract content – fallback to body if .mw-parser-output missing
+  let mainContent = body.querySelector(".mw-parser-output");
+  if (!mainContent) {
+    console.debug("Missing .mw-parser-output; falling back to body.");
+    mainContent = body;
+  }
+
   mainContent.querySelectorAll("h1").forEach((h) => h.remove());
 
   // Build TOC

@@ -1143,3 +1143,52 @@ kbd {
     transition-duration: 0.01ms !important;
   }
 }
+
+
+/* Image error fallback styling */
+.card-thumb[src=""],
+.card-thumb:not([src]) {
+  opacity: 0.3;
+  background: var(--surface2);
+}
+
+/* Ensure touch targets meet 44px minimum on mobile */
+@media (max-width: 768px) {
+
+  button,
+  a,
+  [role="button"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  .nav-pill,
+  .bar-btn,
+  .ctrl-btn,
+  .action-btn,
+  .guide-btn {
+    min-height: 48px;
+  }
+}
+
+/* Reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  :root {
+    --border: rgba(255, 255, 255, 0.5);
+    --border2: rgba(255, 255, 255, 0.7);
+    --text-muted: rgba(255, 255, 255, 0.8);
+  }
+}

@@ -1,124 +1,153 @@
-import { ref, computed, onUnmounted } from "vue";
-import type { WikiSummary } from "@/types/wiki";
-import { fetchArticleHTML } from "./useWikiApi";
+import { ref, computed, onUnmounted, shallowRef, type ShallowRef } from "vue";
+import type { WikiSummary, ProcessedContent } from "@/types/wiki";
+import { fetchArticleHTML, cancelRequest } from "./useWikiApi";
 import { processArticleHTML } from "./useArticleProcessor";
+import { usePomodoroSessionStorage } from "./useStorage";
+import { POMODORO_CONFIG } from "@/config";
 
-// Use Vite's asset URL handling
-const bellSoundUrl = new URL("../assets/sounds/bell.mp3", import.meta.url).href;
-
-// Preload audio
-const bellSound = new Audio(bellSoundUrl);
-bellSound.load();
-
-const playBell = () => {
-  try {
-    // Clone to allow overlapping sounds if needed
-    const audio = bellSound.cloneNode() as HTMLAudioElement;
-    audio.volume = 0.5;
-    audio.play().catch((e) => console.log("Audio playback failed:", e));
-  } catch (e) {
-    console.log("Audio not supported");
-  }
-};
-
+// ============================================================================
+// Types - Discriminated Union for State Machine
+// ============================================================================
 export type LearningState =
-  | "idle"
-  | "buffer"
-  | "reading"
-  | "reflecting"
-  | "post-study"
-  | "paused";
+  | { status: "idle" }
+  | { status: "buffer"; countdown: number }
+  | { status: "reading"; timeRemaining: number }
+  | { status: "reflecting"; timeRemaining: number }
+  | { status: "post-study" }
+  | {
+      status: "paused";
+      previousState: "reading" | "reflecting";
+      timeRemaining: number;
+    };
+
+export type LearningRound = 1 | 2 | "final";
 
 export interface LearningPhase {
-  round: 1 | 2 | "final";
-  readDuration: number; // seconds
-  reflectDuration: number; // seconds
+  round: number;
+  readDuration: number;
+  reflectDuration: number;
   description: string;
   prompts: string[];
 }
 
-const LEARNING_CONFIG: Record<number, LearningPhase> = {
-  1: {
-    round: 1,
-    readDuration: 60,
-    reflectDuration: 120,
-    description: "Initial Read & Reflection",
-    prompts: [
-      "What was the most surprising fact you learned?",
-      "What questions do you have after this read?",
-      "How does this connect to what you already know?",
-    ],
-  },
-  2: {
-    round: 2,
-    readDuration: 300,
-    reflectDuration: 120,
-    description: "Deep Read & Synthesis",
-    prompts: [
-      "What new connections did you make on this read?",
-      "What will you remember from this article?",
-      "How might you apply or share this knowledge?",
-    ],
-  },
-};
+// ============================================================================
+// Audio Management
+// ============================================================================
+const bellSoundUrl = new URL("../assets/sounds/bell.mp3", import.meta.url).href;
+const bellSound = new Audio(bellSoundUrl);
+bellSound.load();
 
-export interface ProcessedContent {
-  html: string;
-  toc: Array<{ id: string; title: string; level: number }>;
+function playBell(): void {
+  try {
+    const audio = bellSound.cloneNode() as HTMLAudioElement;
+    audio.volume = 0.5;
+    audio.play().catch((e) => console.log("Audio playback failed:", e));
+  } catch {
+    // Silent fail
+  }
 }
 
-export interface LearningSession {
-  isActive: boolean;
-  state: LearningState;
-  currentRound: 1 | 2 | "final";
-  timeRemaining: number;
-  bufferCountdown: number;
-  article: WikiSummary | null;
-  notes: Record<string, string>;
-  processedContent: ProcessedContent | null;
-  isLoading: boolean;
-  error: string | null;
-  completedRounds: number;
-  pausedTimeRemaining: number;
+// ============================================================================
+// Timer Manager
+// ============================================================================
+class TimerManager {
+  private timer: number | null = null;
+  private bufferTimer: number | null = null;
+
+  setTimer(callback: () => void, interval: number): void {
+    this.clearTimer();
+    this.timer = window.setInterval(callback, interval);
+  }
+
+  setBufferTimer(callback: () => void, interval: number): void {
+    this.clearBufferTimer();
+    this.bufferTimer = window.setInterval(callback, interval);
+  }
+
+  clearTimer(): void {
+    if (this.timer !== null) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+  }
+
+  clearBufferTimer(): void {
+    if (this.bufferTimer !== null) {
+      clearInterval(this.bufferTimer);
+      this.bufferTimer = null;
+    }
+  }
+
+  clearAll(): void {
+    this.clearTimer();
+    this.clearBufferTimer();
+  }
+
+  isTimerActive(): boolean {
+    return this.timer !== null;
+  }
 }
 
-export function formatTime(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
-}
-
+// ============================================================================
+// Main Composable
+// ============================================================================
 export function usePomodoroLearning() {
-  const timer = ref<number | null>(null);
-  const bufferTimer = ref<number | null>(null);
+  const timerManager = new TimerManager();
 
-  const session = ref<LearningSession>({
-    isActive: false,
-    state: "idle",
-    currentRound: 1,
-    timeRemaining: 0,
-    bufferCountdown: 3,
-    article: null,
-    notes: {},
-    processedContent: null,
-    isLoading: false,
-    error: null,
-    completedRounds: 0,
-    pausedTimeRemaining: 0,
+  // Use shallowRef for large HTML content
+  const processedContent = shallowRef<ProcessedContent | null>(null);
+
+  const isActive = ref(false);
+  const state = ref<LearningState>({ status: "idle" });
+  const currentRound = ref<LearningRound>(1);
+  const article = ref<WikiSummary | null>(null);
+  const notes = ref<Record<string, string>>({});
+  const isLoading = ref(false);
+  const error = ref<string | null>(null);
+  const completedRounds = ref(0);
+
+  // Storage for session recovery (optional)
+  const { state: savedSession } = usePomodoroSessionStorage();
+
+  // ==========================================================================
+  // Computed Properties
+  // ==========================================================================
+  const currentPhase = computed<LearningPhase | null>(() => {
+    if (currentRound.value === "final") return null;
+    return POMODORO_CONFIG[currentRound.value as number] ?? null;
   });
 
-  const currentPhase = computed(() =>
-    session.value.currentRound !== "final"
-      ? LEARNING_CONFIG[session.value.currentRound]
-      : null,
-  );
+  const isBuffering = computed(() => state.value.status === "buffer");
+  const isReading = computed(() => state.value.status === "reading");
+  const isReflecting = computed(() => state.value.status === "reflecting");
+  const isPostStudy = computed(() => state.value.status === "post-study");
+  const isPaused = computed(() => state.value.status === "paused");
 
-  const isBuffering = computed(() => session.value.state === "buffer");
-  const isReading = computed(() => session.value.state === "reading");
-  const isReflecting = computed(() => session.value.state === "reflecting");
-  const isPostStudy = computed(() => session.value.state === "post-study");
-  const isPaused = computed(() => session.value.state === "paused");
-  const formattedTime = computed(() => formatTime(session.value.timeRemaining));
+  const timeRemaining = computed(() => {
+    switch (state.value.status) {
+      case "reading":
+      case "reflecting":
+      case "paused":
+        return state.value.timeRemaining;
+      default:
+        return 0;
+    }
+  });
+
+  const bufferCountdown = computed(() => {
+    return state.value.status === "buffer" ? state.value.countdown : 0;
+  });
+
+  const formattedTime = computed(() => formatTime(timeRemaining.value));
+
+  // ==========================================================================
+  // Helper Functions
+  // ==========================================================================
+  function formatTime(seconds: number): string {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+  }
 
   async function fetchAndProcessArticle(
     title: string,
@@ -127,289 +156,292 @@ export function usePomodoroLearning() {
     return processArticleHTML(html, title, () => {});
   }
 
-  async function startBuffer() {
-    session.value.state = "buffer";
-    session.value.bufferCountdown = 3;
-    session.value.isLoading = true;
-    session.value.error = null;
+  // ==========================================================================
+  // State Transitions
+  // ==========================================================================
+  async function startBuffer(): Promise<void> {
+    state.value = { status: "buffer", countdown: 3 };
+    isLoading.value = true;
+    error.value = null;
 
-    // Fetch and process article DURING the 3-second buffer
-    if (session.value.article) {
+    if (article.value) {
       try {
-        const content = await fetchAndProcessArticle(
-          session.value.article.title,
-        );
-        session.value.processedContent = content;
-        session.value.isLoading = false;
+        const content = await fetchAndProcessArticle(article.value.title);
+        processedContent.value = content;
+        isLoading.value = false;
       } catch (err) {
-        session.value.error =
+        error.value =
           err instanceof Error ? err.message : "Failed to load article";
-        session.value.isLoading = false;
+        isLoading.value = false;
       }
     }
 
-    // Start buffer countdown
-    bufferTimer.value = window.setInterval(() => {
-      if (session.value.bufferCountdown > 1) {
-        session.value.bufferCountdown--;
+    timerManager.setBufferTimer(() => {
+      if (state.value.status === "buffer" && state.value.countdown > 1) {
+        const newCountdown = state.value.countdown - 1;
+        state.value = { status: "buffer", countdown: newCountdown };
+        if (newCountdown === 1) {
+          playBell();
+        }
       } else {
-        if (bufferTimer.value) clearInterval(bufferTimer.value);
-        // Start reading only if content loaded successfully
-        if (!session.value.error) {
+        timerManager.clearBufferTimer();
+        if (!error.value && article.value) {
           startReading();
         }
       }
     }, 1000);
   }
 
-  function startReading() {
-    if (!session.value.article || !session.value.processedContent) return;
+  function startReading(): void {
+    if (!article.value || !processedContent.value || !currentPhase.value)
+      return;
 
     const phase = currentPhase.value;
-    if (!phase) return;
+    state.value = { status: "reading", timeRemaining: phase.readDuration };
 
-    session.value.state = "reading";
-    session.value.timeRemaining = phase.readDuration;
-
-    // Bell at start of reading phase
-    playBell();
-
-    // Start reading timer
-    timer.value = window.setInterval(() => {
-      if (session.value.timeRemaining > 0) {
-        session.value.timeRemaining--;
-      } else {
-        // Reading time complete
-        if (timer.value) clearInterval(timer.value);
+    timerManager.setTimer(() => {
+      if (state.value.status === "reading" && state.value.timeRemaining > 0) {
+        state.value = {
+          status: "reading",
+          timeRemaining: state.value.timeRemaining - 1,
+        };
+      } else if (state.value.status === "reading") {
+        timerManager.clearTimer();
         startReflecting();
       }
     }, 1000);
   }
 
-  function startReflecting() {
+  function startReflecting(): void {
+    if (!currentPhase.value) return;
+
     const phase = currentPhase.value;
-    if (!phase) return;
-
-    session.value.state = "reflecting";
-    session.value.timeRemaining = phase.reflectDuration;
-
-    // Bell at start of reflection phase
+    state.value = {
+      status: "reflecting",
+      timeRemaining: phase.reflectDuration,
+    };
     playBell();
 
-    // Start reflection timer
-    timer.value = window.setInterval(() => {
-      if (session.value.timeRemaining > 0) {
-        session.value.timeRemaining--;
-      } else {
-        // Reflection complete
-        if (timer.value) clearInterval(timer.value);
-        session.value.completedRounds++;
+    timerManager.setTimer(() => {
+      if (
+        state.value.status === "reflecting" &&
+        state.value.timeRemaining > 0
+      ) {
+        state.value = {
+          status: "reflecting",
+          timeRemaining: state.value.timeRemaining - 1,
+        };
+      } else if (state.value.status === "reflecting") {
+        timerManager.clearTimer();
+        completedRounds.value++;
         nextRound();
       }
     }, 1000);
   }
 
-  function togglePause() {
-    if (session.value.state === "paused") {
+  function togglePause(): void {
+    if (state.value.status === "paused") {
       // Resume
-      session.value.state = isReading.value ? "reading" : "reflecting";
-      session.value.timeRemaining = session.value.pausedTimeRemaining;
+      const prev = state.value.previousState;
+      const time = state.value.timeRemaining;
+      state.value = { status: prev, timeRemaining: time };
+      playBell();
 
-      // Resume timer
-      timer.value = window.setInterval(() => {
-        if (session.value.timeRemaining > 0) {
-          session.value.timeRemaining--;
-        } else {
-          if (timer.value) clearInterval(timer.value);
-          if (isReading.value) {
-            startReflecting();
-          } else {
-            session.value.completedRounds++;
-            nextRound();
-          }
+      timerManager.setTimer(() => {
+        if (
+          (state.value.status === "reading" ||
+            state.value.status === "reflecting") &&
+          state.value.timeRemaining > 0
+        ) {
+          state.value = {
+            status: state.value.status,
+            timeRemaining: state.value.timeRemaining - 1,
+          };
+        } else if (state.value.status === "reading") {
+          timerManager.clearTimer();
+          startReflecting();
+        } else if (state.value.status === "reflecting") {
+          timerManager.clearTimer();
+          completedRounds.value++;
+          nextRound();
         }
       }, 1000);
-
-      // Single bell on resume
-      playBell();
     } else if (
-      session.value.state === "reading" ||
-      session.value.state === "reflecting"
+      state.value.status === "reading" ||
+      state.value.status === "reflecting"
     ) {
       // Pause
-      session.value.pausedTimeRemaining = session.value.timeRemaining;
-      session.value.state = "paused";
-      if (timer.value) {
-        clearInterval(timer.value);
-        timer.value = null;
-      }
-      // Single bell on pause
+      const prev = state.value.status;
+      const time = state.value.timeRemaining;
+      state.value = {
+        status: "paused",
+        previousState: prev,
+        timeRemaining: time,
+      };
+      timerManager.clearTimer();
       playBell();
     }
   }
 
-  function skipPhase() {
-    if (session.value.state === "reading") {
-      if (timer.value) clearInterval(timer.value);
+  function skipPhase(): void {
+    if (state.value.status === "reading") {
+      timerManager.clearTimer();
       startReflecting();
-    } else if (session.value.state === "reflecting") {
-      if (timer.value) clearInterval(timer.value);
-      session.value.completedRounds++;
+    } else if (state.value.status === "reflecting") {
+      timerManager.clearTimer();
+      completedRounds.value++;
       nextRound();
     }
-    // No bell for skip – silent
   }
 
-  function addTime() {
+  function addTime(): void {
     if (
-      session.value.state === "reading" ||
-      session.value.state === "reflecting"
+      state.value.status === "reading" ||
+      state.value.status === "reflecting"
     ) {
-      session.value.timeRemaining += 60; // Add 1 minute
-      // Optional: silent, or keep a subtle bell? Removing for now.
+      state.value = {
+        status: state.value.status,
+        timeRemaining: state.value.timeRemaining + 60,
+      };
     }
   }
 
-  function nextRound() {
-    if (session.value.currentRound === 1) {
-      // Move to Round 2 with same article - re-fetch content
-      session.value.currentRound = 2;
-      session.value.isLoading = true;
-      startBuffer(); // 3s buffer before Round 2 read
+  function nextRound(): void {
+    if (currentRound.value === 1) {
+      currentRound.value = 2;
+      isLoading.value = true;
+      startBuffer();
     } else {
-      // Round 2 complete - unlock for free reading
       completeSession();
     }
   }
 
-  function completeSession() {
-    session.value.state = "post-study";
-    session.value.isActive = true; // Still active but unlocked
-    // Single bell to indicate session complete
+  function completeSession(): void {
+    state.value = { status: "post-study" };
+    isActive.value = true;
     playBell();
   }
 
-  function startSession(article: WikiSummary) {
-    // Reset session
-    session.value = {
-      isActive: true,
-      state: "idle",
-      currentRound: 1,
-      timeRemaining: 0,
-      bufferCountdown: 3,
-      article,
-      notes: {},
-      processedContent: null,
-      isLoading: true,
-      error: null,
-      completedRounds: 0,
-      pausedTimeRemaining: 0,
-    };
+  function startSession(newArticle: WikiSummary): void {
+    if (article.value) {
+      cancelRequest(`html-${article.value.title}`);
+    }
 
-    // Start the 3-second buffer (which fetches content)
+    isActive.value = true;
+    state.value = { status: "idle" };
+    currentRound.value = 1;
+    article.value = newArticle;
+    notes.value = {};
+    processedContent.value = null;
+    isLoading.value = true;
+    error.value = null;
+    completedRounds.value = 0;
+
     startBuffer();
   }
 
-  function endSession() {
-    // Clear all timers
-    if (timer.value) clearInterval(timer.value);
-    if (bufferTimer.value) clearInterval(bufferTimer.value);
-
-    session.value.isActive = false;
-    session.value.state = "idle";
+  function endSession(): void {
+    if (article.value) {
+      cancelRequest(`html-${article.value.title}`);
+    }
+    timerManager.clearAll();
+    isActive.value = false;
+    state.value = { status: "idle" };
+    article.value = null;
   }
 
-  function updateNotes(text: string) {
-    const round = session.value.currentRound;
+  function updateNotes(text: string): void {
+    const round = currentRound.value;
     if (round === "final") return;
-
-    session.value.notes = {
-      ...session.value.notes,
+    notes.value = {
+      ...notes.value,
       [`round-${round}`]: text,
     };
   }
 
-  function getNotesForRound(round: 1 | 2): string {
-    return session.value.notes[`round-${round}`] || "";
-  }
-
   function exportNotes(): string {
-    if (!session.value.article) return "";
+    if (!article.value) return "";
 
-    const { title, content_urls } = session.value.article;
+    const { title, content_urls } = article.value;
     const url = content_urls?.desktop?.page || "";
     const date = new Date().toISOString().split("T")[0];
-
-    const round1Notes = getNotesForRound(1);
-    const round2Notes = getNotesForRound(2);
+    const round1Notes = notes.value["round-1"] || "";
+    const round2Notes = notes.value["round-2"] || "";
 
     return `# ${title} - Learning Notes
-
 ## Session Overview
 - **Source**: [${title}](${url})
 - **Date**: ${date}
 - **Method**: Active Recall Pomodoro (2 rounds + free review)
-- **Rounds Completed**: ${session.value.completedRounds}
-
+- **Rounds Completed**: ${completedRounds.value}
 ---
-
 ## Round 1: Initial Read (1 min)
-> ${LEARNING_CONFIG[1].prompts.join("\n> ")}
-
+> ${POMODORO_CONFIG[1].prompts.join("\n> ")}
 ${round1Notes || "_No notes taken._"}
-
 ---
-
 ## Round 2: Deep Read (5 min)
-> ${LEARNING_CONFIG[2].prompts.join("\n> ")}
-
+> ${POMODORO_CONFIG[2].prompts.join("\n> ")}
 ${round2Notes || "_No notes taken._"}
-
 ---
-
 ## Key Takeaways
-- [ ] 
-
+- [ ]
 ## Questions for Further Research
-- [ ] 
-
+- [ ]
 ## Connections to Prior Knowledge
-- [ ] 
+- [ ]
 `;
   }
 
-  function copyNotesToClipboard(): Promise<void> {
+  async function copyNotesToClipboard(): Promise<void> {
     const text = exportNotes();
     if (navigator.clipboard?.writeText) {
       return navigator.clipboard.writeText(text);
     }
-    return Promise.reject(new Error("Clipboard API not available"));
+    throw new Error("Clipboard API not available");
   }
 
-  // Cleanup on unmount
   onUnmounted(() => {
-    if (timer.value) clearInterval(timer.value);
-    if (bufferTimer.value) clearInterval(bufferTimer.value);
+    timerManager.clearAll();
+    if (article.value) {
+      cancelRequest(`html-${article.value.title}`);
+    }
   });
 
+  // ==========================================================================
+  // Public API with explicit return type
+  // ==========================================================================
   return {
-    session,
+    // State
+    isActive,
+    state,
+    currentRound,
+    article,
+    notes,
+    processedContent,
+    isLoading,
+    error,
+    completedRounds,
+
+    // Computed
     currentPhase,
     isBuffering,
     isReading,
     isReflecting,
     isPostStudy,
     isPaused,
+    timeRemaining,
+    bufferCountdown,
     formattedTime,
+
+    // Actions
     startSession,
     endSession,
-    updateNotes,
-    getNotesForRound,
-    exportNotes,
-    copyNotesToClipboard,
-    formatTime,
     togglePause,
     skipPhase,
     addTime,
-  };
+    updateNotes,
+    exportNotes,
+    copyNotesToClipboard,
+    formatTime,
+  } as const;
 }

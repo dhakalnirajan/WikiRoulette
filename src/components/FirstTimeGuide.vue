@@ -1,8 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from "vue";
-
-const GUIDE_SEEN_KEY = "wikiroulette:guideSeen";
-const GUIDE_VERSION = 1;
+import { ref, computed, onMounted, onUnmounted, nextTick } from "vue";
+import { GUIDE_VERSION, GUIDE_SEEN_KEY } from "@/config";
 
 interface GuideStep {
   id: string;
@@ -58,30 +56,39 @@ const GUIDE_STEPS: GuideStep[] = [
 
 const isActive = ref(false);
 const currentStepIndex = ref(0);
-const hasSeenGuide = ref(false);
+const isInitialized = ref(false);
+let previouslyFocusedElement: HTMLElement | null = null;
 
-// Check if user has seen the guide
-function checkGuideStatus() {
-  const seen = localStorage.getItem(GUIDE_SEEN_KEY);
-  const version = localStorage.getItem(`${GUIDE_SEEN_KEY}:version`);
-
-  if (seen === "true" && version === String(GUIDE_VERSION)) {
-    hasSeenGuide.value = true;
-    return false;
+function checkGuideStatus(): boolean {
+  try {
+    const seen = localStorage.getItem(GUIDE_SEEN_KEY);
+    const version = localStorage.getItem(`${GUIDE_SEEN_KEY}:version`);
+    const hasSeen = seen === "true" && version === String(GUIDE_VERSION);
+    isInitialized.value = true;
+    return !hasSeen;
+  } catch {
+    isInitialized.value = true;
+    return true;
   }
-  return true;
 }
 
-function startGuide() {
+function startGuide(): void {
   if (!checkGuideStatus()) return;
-
+  previouslyFocusedElement = document.activeElement as HTMLElement;
   isActive.value = true;
   currentStepIndex.value = 0;
   document.body.style.overflow = "hidden";
   highlightElement();
+  // Trap focus inside guide card
+  nextTick(() => {
+    const firstFocusable = document.querySelector<HTMLElement>(
+      ".guide-card button, .guide-card a",
+    );
+    firstFocusable?.focus();
+  });
 }
 
-function nextStep() {
+function nextStep(): void {
   if (currentStepIndex.value < GUIDE_STEPS.length - 1) {
     currentStepIndex.value++;
     highlightElement();
@@ -90,54 +97,53 @@ function nextStep() {
   }
 }
 
-function prevStep() {
+function prevStep(): void {
   if (currentStepIndex.value > 0) {
     currentStepIndex.value--;
     highlightElement();
   }
 }
 
-function skipStep() {
+function skipStep(): void {
   completeGuide();
 }
 
-function completeGuide() {
+function completeGuide(): void {
   isActive.value = false;
   document.body.style.overflow = "";
-  localStorage.setItem(GUIDE_SEEN_KEY, "true");
-  localStorage.setItem(`${GUIDE_SEEN_KEY}:version`, String(GUIDE_VERSION));
-  hasSeenGuide.value = true;
+  try {
+    localStorage.setItem(GUIDE_SEEN_KEY, "true");
+    localStorage.setItem(`${GUIDE_SEEN_KEY}:version`, String(GUIDE_VERSION));
+  } catch (error) {
+    console.warn("Failed to save guide status:", error);
+  }
+  isInitialized.value = true;
   cleanupHighlight();
+  // Restore focus
+  previouslyFocusedElement?.focus();
+  previouslyFocusedElement = null;
 }
-
-// resetGuide removed – not used
 
 const currentStep = computed(() => GUIDE_STEPS[currentStepIndex.value]);
 const progress = computed(
   () => ((currentStepIndex.value + 1) / GUIDE_STEPS.length) * 100,
 );
 
-// Highlight element if specified
-function highlightElement() {
+function highlightElement(): void {
   cleanupHighlight();
-
   if (!currentStep.value?.highlight) return;
-
-  const { selector } = currentStep.value.highlight; // position not used, omit
+  const { selector } = currentStep.value.highlight;
   const el = document.querySelector(selector) as HTMLElement;
-
   if (el) {
     el.classList.add("guide-highlight");
     el.style.position = "relative";
     el.style.zIndex = "1001";
-
-    // Scroll into view if needed
+    // Ensure element is visible
     el.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 }
 
-// Cleanup highlight
-function cleanupHighlight() {
+function cleanupHighlight(): void {
   document.querySelectorAll(".guide-highlight").forEach((e) => {
     e.classList.remove("guide-highlight");
     (e as HTMLElement).style.position = "";
@@ -145,8 +151,7 @@ function cleanupHighlight() {
   });
 }
 
-// Handle keyboard navigation
-function handleKeydown(e: KeyboardEvent) {
+function handleKeydown(e: KeyboardEvent): void {
   if (!isActive.value) return;
 
   if (e.key === "ArrowRight" || e.key === " ") {
@@ -158,8 +163,30 @@ function handleKeydown(e: KeyboardEvent) {
   } else if (e.key === "Escape") {
     e.preventDefault();
     skipStep();
+  } else if (e.key === "Tab") {
+    // Trap focus inside modal
+    const focusable = document.querySelectorAll<HTMLElement>(
+      ".guide-card button, .guide-card a, .guide-card [tabindex='0']",
+    );
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (e.shiftKey) {
+      if (document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      }
+    } else {
+      if (document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
   }
 }
+
+// Initialize on setup
+checkGuideStatus();
 
 onMounted(() => {
   document.addEventListener("keydown", handleKeydown);
@@ -170,23 +197,27 @@ onUnmounted(() => {
   cleanupHighlight();
 });
 
-// Expose for parent component
 defineExpose({
   startGuide,
   checkGuideStatus,
   handleKeydown,
+  isInitialized,
+  isActive,
 });
 </script>
 
 <template>
   <Transition name="fade">
-    <div v-if="isActive" class="guide-overlay">
-      <!-- Dimmed background -->
+    <div
+      v-if="isActive"
+      class="guide-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-label="User guide"
+    >
       <div class="guide-backdrop" @click="skipStep"></div>
 
-      <!-- Guide card -->
       <div class="guide-card">
-        <!-- Progress bar -->
         <div class="guide-progress">
           <div
             class="guide-progress-fill"
@@ -194,27 +225,28 @@ defineExpose({
           ></div>
         </div>
 
-        <!-- Content -->
         <div class="guide-content">
           <h2 class="guide-title">{{ currentStep.title }}</h2>
           <p class="guide-description" v-html="currentStep.description"></p>
         </div>
 
-        <!-- Navigation -->
         <div class="guide-nav">
           <button
             class="guide-btn guide-btn-secondary"
             @click="prevStep"
             :disabled="currentStepIndex === 0"
+            aria-label="Previous step"
           >
             ← Back
           </button>
-
           <div class="guide-step-indicator">
             {{ currentStepIndex + 1 }} / {{ GUIDE_STEPS.length }}
           </div>
-
-          <button class="guide-btn guide-btn-primary" @click="nextStep">
+          <button
+            class="guide-btn guide-btn-primary"
+            @click="nextStep"
+            aria-label="Next step"
+          >
             {{
               currentStepIndex === GUIDE_STEPS.length - 1
                 ? "Get Started"
@@ -224,14 +256,16 @@ defineExpose({
           </button>
         </div>
 
-        <!-- Skip link -->
-        <button class="guide-skip" @click="skipStep">Skip tour</button>
+        <button class="guide-skip" @click="skipStep" aria-label="Skip tour">
+          Skip tour
+        </button>
       </div>
     </div>
   </Transition>
 </template>
 
 <style scoped>
+/* Same as original – unchanged */
 .guide-overlay {
   position: fixed;
   inset: 0;
@@ -241,14 +275,12 @@ defineExpose({
   justify-content: center;
   padding: 2rem;
 }
-
 .guide-backdrop {
   position: absolute;
   inset: 0;
   background: rgba(0, 0, 0, 0.85);
   backdrop-filter: blur(4px);
 }
-
 .guide-card {
   position: relative;
   background: var(--surface);
@@ -261,7 +293,6 @@ defineExpose({
   z-index: 10001;
   animation: slideUp 0.3s ease-out;
 }
-
 @keyframes slideUp {
   from {
     opacity: 0;
@@ -272,7 +303,6 @@ defineExpose({
     transform: translateY(0);
   }
 }
-
 .guide-progress {
   position: absolute;
   top: 0;
@@ -283,35 +313,29 @@ defineExpose({
   border-radius: var(--radius) var(--radius) 0 0;
   overflow: hidden;
 }
-
 .guide-progress-fill {
   height: 100%;
   background: var(--accent);
   transition: width 0.3s ease;
 }
-
 .guide-content {
   margin-bottom: 1.5rem;
 }
-
 .guide-title {
   font-family: var(--font-serif);
   font-size: 1.4rem;
   color: var(--text);
   margin-bottom: 0.8rem;
 }
-
 .guide-description {
   font-family: var(--font-sans);
   font-size: 0.95rem;
   color: var(--text-dim);
   line-height: 1.6;
 }
-
 .guide-description :deep(strong) {
   color: var(--accent);
 }
-
 .guide-description :deep(kbd) {
   background: var(--surface2);
   border: 1px solid var(--border2);
@@ -321,7 +345,6 @@ defineExpose({
   font-size: 0.8em;
   color: var(--accent);
 }
-
 .guide-nav {
   display: flex;
   align-items: center;
@@ -329,7 +352,6 @@ defineExpose({
   padding-top: 1rem;
   border-top: 1px solid var(--border);
 }
-
 .guide-btn {
   font-family: var(--font-mono);
   font-size: 0.72rem;
@@ -347,38 +369,32 @@ defineExpose({
   transition: all 0.15s;
   min-height: 44px;
 }
-
 .guide-btn:not(:disabled):hover {
   background: var(--surface2);
   color: var(--text);
   border-color: var(--border2);
 }
-
 .guide-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
-
 .guide-btn-primary {
   background: var(--accent);
   border-color: var(--accent);
   color: #0e0e0e;
   font-weight: 500;
 }
-
 .guide-btn-primary:not(:disabled):hover {
   background: #e8c97a;
   border-color: #e8c97a;
   color: #0a0a0a;
 }
-
 .guide-step-indicator {
   font-family: var(--font-mono);
   font-size: 0.7rem;
   color: var(--text-muted);
   letter-spacing: 0.08em;
 }
-
 .guide-skip {
   position: absolute;
   bottom: -2.5rem;
@@ -393,19 +409,15 @@ defineExpose({
   text-decoration: underline;
   transition: color 0.15s;
 }
-
 .guide-skip:hover {
   color: var(--text-muted);
 }
-
-/* Highlight effect for elements */
 .guide-highlight {
   box-shadow:
     0 0 0 3px var(--accent),
     0 0 20px rgba(201, 168, 76, 0.3) !important;
   animation: pulse 2s infinite;
 }
-
 @keyframes pulse {
   0%,
   100% {
@@ -419,35 +431,27 @@ defineExpose({
       0 0 30px rgba(201, 168, 76, 0.5);
   }
 }
-
-/* Responsive */
 @media (max-width: 640px) {
   .guide-card {
     padding: 1.5rem;
     margin: 1rem;
   }
-
   .guide-title {
     font-size: 1.2rem;
   }
-
   .guide-nav {
     flex-direction: column;
     gap: 0.8rem;
   }
-
   .guide-btn {
     width: 100%;
     justify-content: center;
   }
 }
-
-/* Transitions */
 .fade-enter-active,
 .fade-leave-active {
   transition: opacity 0.25s ease;
 }
-
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;

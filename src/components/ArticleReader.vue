@@ -1,13 +1,24 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from "vue";
+import {
+  ref,
+  computed,
+  watch,
+  onMounted,
+  onUnmounted,
+  nextTick,
+  shallowRef,
+  type ShallowRef,
+} from "vue";
 import TocSidebar from "./TocSidebar.vue";
 import PomodoroLearningView from "./PomodoroLearningView.vue";
 import {
   fetchArticleHTML,
   htmlToObsidianMarkdown,
+  cancelRequest,
 } from "@/composables/useWikiApi";
 import { processArticleHTML } from "@/composables/useArticleProcessor";
-import type { WikiSummary, TocItem } from "@/types/wiki";
+import type { WikiSummary, TocItem, ProcessedContent } from "@/types/wiki";
+import ArticleFacts from "./ArticleFacts.vue";
 
 const props = defineProps<{ summary: WikiSummary }>();
 const emit = defineEmits<{
@@ -15,8 +26,12 @@ const emit = defineEmits<{
   (e: "navigate", title: string): void;
 }>();
 
-const state = ref<"loading" | "ready" | "error">("loading");
-const processedHtml = ref("");
+// ============================================================================
+// State
+// ============================================================================
+const loadingState = ref<"loading" | "ready" | "error">("loading");
+const processedHtml: ShallowRef<string> = shallowRef("");
+const markdownContent: ShallowRef<string> = shallowRef("");
 const toc = ref<TocItem[]>([]);
 const errorMsg = ref("");
 const articleRef = ref<HTMLElement | null>(null);
@@ -24,29 +39,44 @@ const showPomodoro = ref(false);
 const scrollProgress = ref(0);
 const showBackToTop = ref(false);
 
-// Feature states
 const isFullscreen = ref(false);
 const viewMode = ref<"html" | "markdown">("html");
 const showShortcuts = ref(false);
-const markdownContent = ref("");
 
+let currentRequestKey: string | null = null;
+
+// ============================================================================
+// Computed
+// ============================================================================
 const wikiUrl = computed(
   () =>
     props.summary.content_urls?.desktop?.page ??
-    `https://en.wikipedia.org/wiki/${encodeURIComponent(props.summary.title.replace(/ /g, "_"))}`,
+    `https://en.wikipedia.org/wiki/${encodeURIComponent(
+      props.summary.title.replace(/ /g, "_"),
+    )}`,
 );
 
-async function load(summary: WikiSummary) {
-  state.value = "loading";
+// ============================================================================
+// Load Article
+// ============================================================================
+async function load(summary: WikiSummary): Promise<void> {
+  if (currentRequestKey) {
+    cancelRequest(currentRequestKey);
+  }
+
+  loadingState.value = "loading";
   processedHtml.value = "";
   markdownContent.value = "";
   toc.value = [];
   errorMsg.value = "";
   window.scrollTo({ top: 0, behavior: "instant" });
 
+  currentRequestKey = `html-${summary.title}`;
+
   try {
     const html = await fetchArticleHTML(summary.title);
     const result = processArticleHTML(html, summary.title, handleWikiLink);
+
     processedHtml.value = result.html;
     toc.value = result.toc;
     markdownContent.value = htmlToObsidianMarkdown(
@@ -54,75 +84,75 @@ async function load(summary: WikiSummary) {
       summary.title,
       wikiUrl.value,
     );
-    state.value = "ready";
+
+    loadingState.value = "ready";
     await nextTick();
-    attachWikiLinkHandlers();
+    // Use event delegation instead of individual handlers
+    attachEventDelegation();
   } catch (err) {
+    if (err instanceof Error && err.message.includes("cancelled")) {
+      return;
+    }
     errorMsg.value = err instanceof Error ? err.message : "Unknown error";
-    state.value = "error";
+    loadingState.value = "error";
+  } finally {
+    currentRequestKey = null;
   }
 }
 
-function handleWikiLink(title: string) {
+function handleWikiLink(title: string): void {
   emit("navigate", title);
 }
 
-function attachWikiLinkHandlers() {
+// Event delegation: one listener for all wiki links
+function attachEventDelegation(): void {
   if (!articleRef.value) return;
-  articleRef.value
-    .querySelectorAll<HTMLElement>("[data-wiki]")
-    .forEach((el) => {
-      el.removeAttribute("href");
-      el.addEventListener("click", (e) => {
-        e.preventDefault();
-        const title = el.getAttribute("data-wiki");
-        if (title) emit("navigate", title);
-      });
-      el.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          const title = el.getAttribute("data-wiki");
-          if (title) emit("navigate", title);
-        }
-      });
-      el.setAttribute("role", "button");
-      el.setAttribute("tabindex", "0");
-      el.setAttribute("title", `Read article: ${el.getAttribute("data-wiki")}`);
-    });
+  articleRef.value.removeEventListener("click", handleContainerClick);
+  articleRef.value.addEventListener("click", handleContainerClick);
 }
 
-function attachFallbackLinkHandlers() {
-  if (!articleRef.value) return;
-  articleRef.value
-    .querySelectorAll<HTMLAnchorElement>("a[href]")
-    .forEach((a) => {
-      const href = a.getAttribute("href") || "";
-      if (href.startsWith("/wiki/") || href.startsWith("./")) {
-        a.addEventListener("click", (e) => {
-          e.preventDefault();
-          const title =
-            a.getAttribute("data-wiki") ||
-            decodeURIComponent(
-              href.replace(/^\.?\/wiki\//, "").split("#")[0],
-            ).replace(/_/g, " ");
-          if (title && !title.includes(":")) {
-            emit("navigate", title);
-          }
-        });
-      }
-    });
+function handleContainerClick(e: MouseEvent): void {
+  const target = e.target as HTMLElement;
+  const wikiLink = target.closest("[data-wiki]") as HTMLElement;
+  if (wikiLink) {
+    e.preventDefault();
+    const title = wikiLink.getAttribute("data-wiki");
+    if (title) emit("navigate", title);
+  }
 }
 
+// Fallback for legacy links
+function handleFallbackClick(e: MouseEvent): void {
+  const target = e.target as HTMLElement;
+  const anchor = target.closest("a[href]") as HTMLAnchorElement;
+  if (!anchor) return;
+  const href = anchor.getAttribute("href") || "";
+  if (href.startsWith("/wiki/") || href.startsWith("./")) {
+    e.preventDefault();
+    const title =
+      anchor.getAttribute("data-wiki") ||
+      decodeURIComponent(
+        href.replace(/^\.?\/wiki\//, "").split("#")[0],
+      ).replace(/_/g, " ");
+    if (title && !title.includes(":")) {
+      emit("navigate", title);
+    }
+  }
+}
+
+// Watch for summary changes
 watch(
   () => props.summary,
   (newSummary) => {
-    load(newSummary);
+    if (newSummary) load(newSummary);
   },
   { immediate: true },
 );
 
-// --- Reading progress ---
-function updateScrollProgress() {
+// ============================================================================
+// Scroll Progress
+// ============================================================================
+function updateScrollProgress(): void {
   const scrollTop = window.scrollY;
   const docHeight = document.documentElement.scrollHeight - window.innerHeight;
   const progress = docHeight > 0 ? (scrollTop / docHeight) * 100 : 0;
@@ -130,14 +160,14 @@ function updateScrollProgress() {
   showBackToTop.value = scrollTop > 300;
 }
 
-// --- Feature Actions ---
-function startPomodoro() {
-  if (props.summary) {
-    showPomodoro.value = true;
-  }
+// ============================================================================
+// Feature Actions
+// ============================================================================
+function startPomodoro(): void {
+  if (props.summary) showPomodoro.value = true;
 }
 
-function toggleFullscreen() {
+function toggleFullscreen(): void {
   if (!document.fullscreenElement) {
     document.documentElement.requestFullscreen().catch(() => {});
     isFullscreen.value = true;
@@ -147,11 +177,11 @@ function toggleFullscreen() {
   }
 }
 
-function toggleViewMode() {
+function toggleViewMode(): void {
   viewMode.value = viewMode.value === "html" ? "markdown" : "html";
 }
 
-function downloadMarkdown() {
+function downloadMarkdown(): void {
   const blob = new Blob([markdownContent.value], { type: "text/markdown" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -164,16 +194,18 @@ function downloadMarkdown() {
   URL.revokeObjectURL(url);
 }
 
-function toggleShortcuts() {
+function toggleShortcuts(): void {
   showShortcuts.value = !showShortcuts.value;
 }
 
-function scrollToTop() {
+function scrollToTop(): void {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-// --- Keyboard Shortcuts ---
-function handleKeydown(e: KeyboardEvent) {
+// ============================================================================
+// Keyboard Shortcuts
+// ============================================================================
+function handleKeydown(e: KeyboardEvent): void {
   const tag = (e.target as HTMLElement).tagName;
   if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
 
@@ -182,65 +214,80 @@ function handleKeydown(e: KeyboardEvent) {
     toggleShortcuts();
     return;
   }
+
   if (showShortcuts.value && e.key === "Escape") {
     showShortcuts.value = false;
     return;
   }
+
   if (e.key === "Backspace") {
     e.preventDefault();
     emit("back");
     return;
   }
+
   if (e.key === "Escape" && isFullscreen.value) {
     toggleFullscreen();
     return;
   }
+
   if (e.key === "Escape" && !isFullscreen.value && !showShortcuts.value) {
     emit("back");
     return;
   }
-  if (e.key.toLowerCase() === "m") {
-    toggleViewMode();
-  }
-  if (e.key.toLowerCase() === "f") {
-    toggleFullscreen();
-  }
-  if (e.key.toLowerCase() === "d" && !e.ctrlKey && !e.metaKey) {
+
+  if (e.key.toLowerCase() === "m") toggleViewMode();
+  if (e.key.toLowerCase() === "f") toggleFullscreen();
+  if (e.key.toLowerCase() === "d" && !e.ctrlKey && !e.metaKey)
     downloadMarkdown();
-  }
   if (e.key.toLowerCase() === "l" && !e.ctrlKey && !e.metaKey) {
     e.preventDefault();
     startPomodoro();
   }
 }
 
+// ============================================================================
+// Lifecycle
+// ============================================================================
 onMounted(() => {
   document.addEventListener("keydown", handleKeydown);
   document.addEventListener("fullscreenchange", () => {
     isFullscreen.value = !!document.fullscreenElement;
   });
-  window.addEventListener("scroll", updateScrollProgress);
+  window.addEventListener("scroll", updateScrollProgress, { passive: true });
   updateScrollProgress();
+  // Attach fallback click handler
+  document.addEventListener("click", handleFallbackClick);
 });
 
 onUnmounted(() => {
   document.removeEventListener("keydown", handleKeydown);
   window.removeEventListener("scroll", updateScrollProgress);
+  if (currentRequestKey) {
+    cancelRequest(currentRequestKey);
+    currentRequestKey = null;
+  }
+  if (articleRef.value) {
+    articleRef.value.removeEventListener("click", handleContainerClick);
+  }
+  document.removeEventListener("click", handleFallbackClick);
 });
 
+// Copy URL
 const copied = ref(false);
-async function copyUrl() {
+async function copyUrl(): Promise<void> {
   try {
     await navigator.clipboard.writeText(wikiUrl.value);
     copied.value = true;
     setTimeout(() => (copied.value = false), 1800);
-  } catch (_) {}
+  } catch {
+    // Silent fail
+  }
 }
 </script>
 
 <template>
   <div class="reader" :class="{ 'fullscreen-active': isFullscreen }">
-    <!-- Pomodoro Learning View Overlay -->
     <Transition name="fade">
       <PomodoroLearningView
         v-if="showPomodoro"
@@ -254,7 +301,6 @@ async function copyUrl() {
     </Transition>
 
     <template v-if="!showPomodoro">
-      <!-- Reading progress bar -->
       <div class="progress-bar-container">
         <div
           class="progress-bar-fill"
@@ -262,7 +308,6 @@ async function copyUrl() {
         ></div>
       </div>
 
-      <!-- Reader top bar -->
       <div class="reader-bar">
         <button
           class="back-btn"
@@ -287,7 +332,6 @@ async function copyUrl() {
         </div>
 
         <div class="reader-bar-actions">
-          <!-- Pomodoro button -->
           <button
             class="bar-btn"
             @click="startPomodoro"
@@ -307,7 +351,6 @@ async function copyUrl() {
             <span class="hide-mobile">Learn</span>
           </button>
 
-          <!-- View Mode Toggle -->
           <button
             class="bar-btn"
             @click="toggleViewMode"
@@ -320,7 +363,6 @@ async function copyUrl() {
             <span class="show-mobile">MD</span>
           </button>
 
-          <!-- Download Markdown -->
           <button
             class="bar-btn"
             @click="downloadMarkdown"
@@ -341,7 +383,6 @@ async function copyUrl() {
             <span class="hide-mobile">Export</span>
           </button>
 
-          <!-- Fullscreen Toggle -->
           <button
             class="bar-btn"
             @click="toggleFullscreen"
@@ -376,7 +417,6 @@ async function copyUrl() {
             </svg>
           </button>
 
-          <!-- Copy URL -->
           <button
             class="bar-btn"
             :class="{ copied }"
@@ -411,7 +451,6 @@ async function copyUrl() {
             </svg>
           </button>
 
-          <!-- Help/Shortcuts -->
           <button
             class="bar-btn help-btn"
             @click="toggleShortcuts"
@@ -422,14 +461,13 @@ async function copyUrl() {
         </div>
       </div>
 
-      <!-- Main Content -->
       <div class="reader-body">
-        <div v-if="state === 'loading'" class="reader-loading">
+        <div v-if="loadingState === 'loading'" class="reader-loading">
           <div class="spinner"></div>
           <p>Loading "{{ summary.title }}"…</p>
         </div>
 
-        <div v-else-if="state === 'error'" class="reader-error">
+        <div v-else-if="loadingState === 'error'" class="reader-error">
           <p class="error-headline">Could not load this article.</p>
           <p class="error-detail">{{ errorMsg }}</p>
           <a
@@ -440,16 +478,19 @@ async function copyUrl() {
           >
             Open on Wikipedia ↗
           </a>
+          <button class="retry-btn" @click="load(summary)">Retry</button>
         </div>
 
         <div v-else class="reader-layout">
           <TocSidebar :items="toc" />
-
-          <article
-            class="reader-article"
-            ref="articleRef"
-            @click="attachFallbackLinkHandlers"
-          >
+          <article class="reader-article" ref="articleRef">
+            <!-- Article facts marquee (appears after the article content) -->
+            <ArticleFacts
+              v-if="processedHtml"
+              :processed-html="processedHtml"
+            />
+            <br />
+            <br />
             <div v-if="viewMode === 'html'" class="article-hero">
               <div class="article-hero-label">
                 <span class="hero-line" aria-hidden="true"></span>
@@ -476,7 +517,6 @@ async function copyUrl() {
         </div>
       </div>
 
-      <!-- Back to top button -->
       <Transition name="fade">
         <button
           v-if="showBackToTop"
@@ -497,17 +537,23 @@ async function copyUrl() {
         </button>
       </Transition>
 
-      <!-- Keyboard Shortcuts Modal -->
       <Transition name="fade">
         <div
           v-if="showShortcuts"
           class="shortcuts-modal"
           @click.self="showShortcuts = false"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Keyboard shortcuts"
         >
           <div class="shortcuts-card">
             <div class="shortcuts-header">
               <h2>Keyboard Shortcuts</h2>
-              <button class="close-btn" @click="showShortcuts = false">
+              <button
+                class="close-btn"
+                @click="showShortcuts = false"
+                aria-label="Close"
+              >
                 &times;
               </button>
             </div>
@@ -559,8 +605,6 @@ async function copyUrl() {
 .fullscreen-active {
   padding-top: var(--reader-bar-h);
 }
-
-/* Progress bar */
 .progress-bar-container {
   position: fixed;
   top: var(--nav-h);

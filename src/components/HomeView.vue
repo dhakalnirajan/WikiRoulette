@@ -5,6 +5,7 @@ import SkeletonCard from "./SkeletonCard.vue";
 import SpinControls from "./SpinControls.vue";
 import RecentItem from "./RecentItem.vue";
 import ShortcutsModal from "./ShortcutsModal.vue";
+import ArticleFactsCard from "./ArticleFactsCard.vue"; // new import
 import {
   fetchRandomSummary,
   fetchSummaryByTitle,
@@ -20,7 +21,7 @@ const emit = defineEmits<{
 // History
 const { current, canGoBack, push, goBack, totalCount, recent } = useHistory();
 
-// Bookmarks (localStorage)
+// Bookmarks
 const bookmarks = ref<WikiSummary[]>([]);
 const bookmarksLoaded = ref(false);
 
@@ -29,32 +30,21 @@ const loading = ref(false);
 const errorMsg = ref("");
 const jumpTitle = ref("");
 const jumpLoading = ref(false);
-
 const slideDir = ref<"right" | "left">("right");
 const transitionName = computed(() =>
   slideDir.value === "right" ? "slide-right" : "slide-left",
 );
-
-// Computed: hasSummary
-const hasSummary = computed(() => current.value !== null);
-
-// Facts for empty state
-const facts = [
-  "Wikipedia has over 6 million articles in English.",
-  "The longest article on Wikipedia is about the COVID-19 pandemic.",
-  "The first Wikipedia article was 'HomePage'.",
-  "There are more than 300 language editions of Wikipedia.",
-  "Over 1.5 billion edits have been made on Wikipedia.",
-  "The most edited article is 'Deaths in 2024'.",
-];
-const currentFact = ref(facts[0]);
-let factInterval: number | null = null;
-
-// Keyboard shortcuts modal
 const showShortcuts = ref(false);
 
-// Initialize bookmarks from localStorage
-function loadBookmarks() {
+const hasSummary = computed(() => current.value !== null);
+
+// Track previously seen pageids to prevent duplicates
+const seenPageIds = ref<Set<number>>(new Set());
+
+// ============================================================================
+// Bookmarks
+// ============================================================================
+function loadBookmarks(): void {
   try {
     const stored = localStorage.getItem("wikiroulette-bookmarks");
     if (stored) {
@@ -67,7 +57,7 @@ function loadBookmarks() {
   }
 }
 
-function saveBookmarks() {
+function saveBookmarks(): void {
   try {
     localStorage.setItem(
       "wikiroulette-bookmarks",
@@ -78,7 +68,7 @@ function saveBookmarks() {
   }
 }
 
-function toggleBookmark(summary: WikiSummary) {
+function toggleBookmark(summary: WikiSummary): void {
   const index = bookmarks.value.findIndex((b) => b.pageid === summary.pageid);
   if (index === -1) {
     bookmarks.value.push(summary);
@@ -92,32 +82,36 @@ function isBookmarked(summary: WikiSummary): boolean {
   return bookmarks.value.some((b) => b.pageid === summary.pageid);
 }
 
-// Rotate facts every 8 seconds
-function startFactRotation() {
-  if (factInterval) clearInterval(factInterval);
-  factInterval = window.setInterval(() => {
-    const nextIndex = (facts.indexOf(currentFact.value) + 1) % facts.length;
-    currentFact.value = facts[nextIndex];
-  }, 8000);
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function stopFactRotation() {
-  if (factInterval) {
-    clearInterval(factInterval);
-    factInterval = null;
-  }
-}
-
+// ============================================================================
 // Spin
-async function spin() {
+// ============================================================================
+async function spin(): Promise<void> {
   if (loading.value || jumpLoading.value) return;
+
   loading.value = true;
   errorMsg.value = "";
   slideDir.value = "right";
+
   try {
-    const data = await fetchRandomSummary();
+    let data: WikiSummary | null = null;
+    do {
+      data = await fetchRandomSummary();
+      if (seenPageIds.value.has(data.pageid)) {
+        await delay(800);
+      }
+    } while (seenPageIds.value.has(data.pageid));
+
+    seenPageIds.value.add(data.pageid);
+    if (seenPageIds.value.size > 1000) {
+      const recentIds = Array.from(seenPageIds.value).slice(-500);
+      seenPageIds.value = new Set(recentIds);
+    }
+
     push(data);
-    stopFactRotation(); // Stop facts once an article is loaded
   } catch (e) {
     errorMsg.value = e instanceof Error ? e.message : "Failed to fetch";
   } finally {
@@ -125,20 +119,20 @@ async function spin() {
   }
 }
 
+// ============================================================================
 // Jump to article
-async function jumpToArticle() {
+// ============================================================================
+async function jumpToArticle(): Promise<void> {
   const title = jumpTitle.value.trim();
   if (!title) return;
   if (loading.value || jumpLoading.value) return;
   jumpLoading.value = true;
   errorMsg.value = "";
   slideDir.value = "right";
-
   try {
     const data = await fetchSummaryByTitle(title);
     push(data);
     jumpTitle.value = "";
-    stopFactRotation();
   } catch (e) {
     errorMsg.value =
       e instanceof Error ? `Article "${title}" not found.` : "Failed to fetch";
@@ -147,67 +141,79 @@ async function jumpToArticle() {
   }
 }
 
-function prev() {
+function prev(): void {
   if (!canGoBack.value) return;
   slideDir.value = "left";
   goBack();
 }
 
-// Keyboard shortcuts (global)
-function handleKeydown(e: KeyboardEvent) {
+// ============================================================================
+// Keyboard shortcuts
+// ============================================================================
+function handleKeydown(e: KeyboardEvent): void {
   const tag = (e.target as HTMLElement).tagName;
   if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-
   if (e.key === "F1" || (e.key === "?" && e.shiftKey)) {
     e.preventDefault();
     showShortcuts.value = true;
     return;
   }
-
   if (showShortcuts.value && e.key === "Escape") {
     showShortcuts.value = false;
     return;
   }
-
-  if (e.key === "ArrowLeft" && !loading.value && !jumpLoading.value) {
-    prev();
-  }
-  if (e.key === "ArrowRight" || e.key === " ") {
+  if (
+    e.key.toLowerCase() === "r" &&
+    current.value &&
+    !e.ctrlKey &&
+    !e.metaKey &&
+    !e.altKey
+  ) {
     e.preventDefault();
-    spin();
-  }
-  if (e.key.toLowerCase() === "r" && current.value) {
     emit("read", current.value.summary);
+    return;
   }
-  if (e.key.toLowerCase() === "l" && current.value) {
+  if (
+    e.key.toLowerCase() === "l" &&
+    current.value &&
+    !e.ctrlKey &&
+    !e.metaKey &&
+    !e.altKey
+  ) {
+    e.preventDefault();
     emit("pomodoro", current.value.summary);
+    return;
   }
 }
 
+// ============================================================================
+// Lifecycle
+// ============================================================================
 onMounted(() => {
   loadBookmarks();
-  startFactRotation();
   document.addEventListener("keydown", handleKeydown);
 });
 
 onUnmounted(() => {
-  stopFactRotation();
   document.removeEventListener("keydown", handleKeydown);
+  seenPageIds.value.clear();
 });
 
-defineExpose({ spin, totalCount });
+defineExpose({
+  spin,
+  prev,
+  totalCount,
+  showShortcuts,
+});
 </script>
 
 <template>
   <div class="home">
-    <!-- Keyboard Shortcuts Modal -->
     <ShortcutsModal :show="showShortcuts" @close="showShortcuts = false" />
 
     <div class="home-layout">
-      <!-- Main Content (Center) -->
       <div class="home-main">
         <div class="home-inner">
-          <!-- Jump / Search Bar (enhanced) -->
           <div class="command-bar">
             <div class="jump-container glass">
               <span class="search-icon">
@@ -239,8 +245,6 @@ defineExpose({ spin, totalCount });
                 {{ jumpLoading ? "..." : "Go" }}
               </button>
             </div>
-
-            <!-- Stats / Exploration Counter -->
             <div class="stats glass">
               <div class="stat-item">
                 <span class="stat-label">Explored</span>
@@ -253,12 +257,9 @@ defineExpose({ spin, totalCount });
             </div>
           </div>
 
-          <!-- Card Area -->
           <div class="card-area">
-            <!-- Loading skeleton with shimmer -->
             <SkeletonCard v-if="loading || jumpLoading" />
 
-            <!-- Error Card -->
             <div v-else-if="errorMsg" class="error-card glass">
               <p class="error-icon">⚠️</p>
               <p class="error-message">{{ errorMsg }}</p>
@@ -281,7 +282,6 @@ defineExpose({ spin, totalCount });
               </button>
             </div>
 
-            <!-- Article card with slide transition -->
             <Transition
               :name="transitionName"
               mode="out-in"
@@ -297,7 +297,6 @@ defineExpose({ spin, totalCount });
               />
             </Transition>
 
-            <!-- Empty State Hero -->
             <div v-else class="empty-hero glass">
               <div class="hero-icon">
                 <svg
@@ -317,14 +316,9 @@ defineExpose({ spin, totalCount });
                 Hit <strong>Spin</strong> or press <kbd>Space</kbd> to explore
                 random knowledge.
               </p>
-              <div class="fact-rotator">
-                <span class="fact-label">Did you know?</span>
-                <p class="fact-text">{{ currentFact }}</p>
-              </div>
             </div>
           </div>
 
-          <!-- Spin Controls -->
           <div class="controls-wrapper">
             <SpinControls
               :can-go-back="canGoBack"
@@ -335,7 +329,6 @@ defineExpose({ spin, totalCount });
             />
           </div>
 
-          <!-- Keyboard Hint -->
           <div class="kbd-hint-wrapper">
             <div class="kbd-hint">
               <span class="hint-item"> <kbd>←</kbd> <span>Prev</span> </span>
@@ -359,7 +352,6 @@ defineExpose({ spin, totalCount });
         </div>
       </div>
 
-      <!-- Sidebar (Recent Discoveries) -->
       <aside class="home-sidebar">
         <div class="sidebar-card glass">
           <h3 class="sidebar-title">
@@ -380,7 +372,11 @@ defineExpose({ spin, totalCount });
             <p>No articles yet. Start spinning!</p>
           </div>
           <ul v-else class="recent-list">
-            <li v-for="(entry, index) in recent" :key="index">
+            <li
+              v-for="(entry, index) in recent"
+              :key="`${entry.summary.pageid}-${index}`"
+              v-memo="[entry.summary.pageid]"
+            >
               <RecentItem
                 :summary="entry.summary"
                 :is-current="entry.summary.pageid === current?.summary.pageid"
@@ -391,7 +387,9 @@ defineExpose({ spin, totalCount });
             </li>
           </ul>
 
-          <!-- Bookmarks quick view (optional) -->
+          <!-- Show facts about the current article if one exists -->
+          <ArticleFactsCard v-if="hasSummary" :summary="current!.summary" />
+
           <div v-if="bookmarks.length > 0" class="sidebar-divider"></div>
           <div v-if="bookmarks.length > 0" class="sidebar-bookmarks">
             <h4 class="sidebar-subtitle">
@@ -408,7 +406,11 @@ defineExpose({ spin, totalCount });
               Bookmarks
             </h4>
             <ul class="recent-list compact">
-              <li v-for="(bookmark, idx) in bookmarks.slice(0, 3)" :key="idx">
+              <li
+                v-for="(bookmark, idx) in bookmarks.slice(0, 3)"
+                :key="`${bookmark.pageid}-${idx}`"
+                v-memo="[bookmark.pageid]"
+              >
                 <RecentItem
                   :summary="bookmark"
                   :is-current="bookmark.pageid === current?.summary.pageid"
@@ -431,7 +433,6 @@ defineExpose({ spin, totalCount });
   padding-top: var(--nav-h);
   background: var(--bg);
 }
-
 .home-layout {
   display: flex;
   max-width: 1400px;
@@ -439,39 +440,31 @@ defineExpose({ spin, totalCount });
   padding: 2rem 1.5rem;
   gap: 2rem;
 }
-
 .home-main {
   flex: 1;
-  min-width: 0; /* Prevent overflow */
+  min-width: 0;
 }
-
 .home-sidebar {
   width: 280px;
   flex-shrink: 0;
 }
-
 .home-inner {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
 }
-
-/* Glassmorphism utility */
 .glass {
   background: var(--surface);
   border: 1px solid var(--border);
   backdrop-filter: blur(10px);
   border-radius: var(--radius);
 }
-
-/* Command bar (search + stats) */
 .command-bar {
   display: flex;
   gap: 1rem;
   align-items: center;
   flex-wrap: wrap;
 }
-
 .jump-container {
   flex: 1;
   min-width: 240px;
@@ -480,13 +473,11 @@ defineExpose({ spin, totalCount });
   gap: 0.5rem;
   padding: 0.25rem 0.25rem 0.25rem 1rem;
 }
-
 .search-icon {
   color: var(--text-muted);
   display: flex;
   align-items: center;
 }
-
 .jump-input {
   flex: 1;
   background: transparent;
@@ -497,12 +488,10 @@ defineExpose({ spin, totalCount });
   padding: 0.6rem 0;
   outline: none;
 }
-
 .jump-input::placeholder {
   color: var(--text-muted);
   font-style: italic;
 }
-
 .jump-btn {
   font-family: var(--font-mono);
   font-size: 0.7rem;
@@ -517,31 +506,25 @@ defineExpose({ spin, totalCount });
   transition: all 0.15s;
   white-space: nowrap;
 }
-
 .jump-btn:hover:not(:disabled) {
   background: var(--accent);
   color: #0e0e0e;
   border-color: var(--accent);
 }
-
 .jump-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
-
 .stats {
   display: flex;
   gap: 1.5rem;
   padding: 0.6rem 1.2rem;
-  background: var(--surface);
 }
-
 .stat-item {
   display: flex;
   flex-direction: column;
   align-items: center;
 }
-
 .stat-label {
   font-family: var(--font-mono);
   font-size: 0.6rem;
@@ -549,7 +532,6 @@ defineExpose({ spin, totalCount });
   color: var(--text-muted);
   letter-spacing: 0.05em;
 }
-
 .stat-value {
   font-family: var(--font-serif);
   font-size: 1.2rem;
@@ -557,8 +539,6 @@ defineExpose({ spin, totalCount });
   color: var(--accent);
   line-height: 1.2;
 }
-
-/* Card area */
 .card-area {
   min-height: 450px;
   display: flex;
@@ -566,8 +546,6 @@ defineExpose({ spin, totalCount });
   justify-content: center;
   width: 100%;
 }
-
-/* Error card */
 .error-card {
   width: 100%;
   max-width: 800px;
@@ -578,18 +556,15 @@ defineExpose({ spin, totalCount });
   gap: 1rem;
   text-align: center;
 }
-
 .error-icon {
   font-size: 2rem;
   margin-bottom: 0.5rem;
 }
-
 .error-message {
   font-family: var(--font-mono);
   font-size: 0.8rem;
   color: var(--text-muted);
 }
-
 .retry-btn {
   font-family: var(--font-mono);
   font-size: 0.7rem;
@@ -606,13 +581,10 @@ defineExpose({ spin, totalCount });
   gap: 0.4rem;
   transition: all 0.15s;
 }
-
 .retry-btn:hover {
   background: var(--accent-dim);
   border-color: var(--accent);
 }
-
-/* Empty hero */
 .empty-hero {
   width: 100%;
   max-width: 800px;
@@ -622,9 +594,7 @@ defineExpose({ spin, totalCount });
   align-items: center;
   text-align: center;
   gap: 1.2rem;
-  background: var(--surface);
 }
-
 .hero-icon {
   background: var(--accent-glow);
   width: 80px;
@@ -635,7 +605,6 @@ defineExpose({ spin, totalCount });
   justify-content: center;
   margin-bottom: 0.5rem;
 }
-
 .hero-title {
   font-family: var(--font-serif);
   font-size: 2rem;
@@ -643,13 +612,11 @@ defineExpose({ spin, totalCount });
   color: var(--text);
   margin: 0;
 }
-
 .hero-subtitle {
   font-family: var(--font-sans);
   font-size: 1rem;
   color: var(--text-muted);
 }
-
 .hero-subtitle kbd {
   background: var(--surface2);
   border: 1px solid var(--border2);
@@ -659,7 +626,6 @@ defineExpose({ spin, totalCount });
   font-size: 0.7rem;
   color: var(--accent);
 }
-
 .fact-rotator {
   margin-top: 1rem;
   padding: 1rem;
@@ -667,7 +633,6 @@ defineExpose({ spin, totalCount });
   border-radius: var(--radius);
   max-width: 400px;
 }
-
 .fact-label {
   font-family: var(--font-mono);
   font-size: 0.6rem;
@@ -677,7 +642,6 @@ defineExpose({ spin, totalCount });
   display: block;
   margin-bottom: 0.4rem;
 }
-
 .fact-text {
   font-family: var(--font-sans);
   font-size: 0.9rem;
@@ -685,8 +649,6 @@ defineExpose({ spin, totalCount });
   line-height: 1.5;
   margin: 0;
 }
-
-/* Keyboard hint */
 .kbd-hint {
   display: flex;
   align-items: center;
@@ -698,17 +660,14 @@ defineExpose({ spin, totalCount });
   justify-content: center;
   margin-top: 1rem;
 }
-
 .hint-item {
   display: flex;
   align-items: center;
   gap: 0.25rem;
 }
-
 .sep {
   color: var(--text-faint);
 }
-
 .help-btn {
   background: none;
   border: none;
@@ -717,7 +676,6 @@ defineExpose({ spin, totalCount });
   display: flex;
   align-items: center;
 }
-
 .help-btn kbd {
   background: var(--surface2);
   border: 1px solid var(--border2);
@@ -726,17 +684,9 @@ defineExpose({ spin, totalCount });
   font-size: 0.65rem;
   color: var(--accent);
 }
-
-/* Sidebar */
-.home-sidebar {
-  display: block;
-}
-
 .sidebar-card {
   padding: 1.2rem;
-  background: var(--surface);
 }
-
 .sidebar-title {
   font-family: var(--font-serif);
   font-size: 1rem;
@@ -749,11 +699,9 @@ defineExpose({ spin, totalCount });
   border-bottom: 1px solid var(--border);
   padding-bottom: 0.5rem;
 }
-
 .sidebar-title svg {
   opacity: 0.7;
 }
-
 .sidebar-empty {
   font-family: var(--font-sans);
   font-size: 0.85rem;
@@ -762,23 +710,19 @@ defineExpose({ spin, totalCount });
   text-align: center;
   font-style: italic;
 }
-
 .recent-list {
   list-style: none;
   padding: 0;
   margin: 0;
 }
-
 .recent-list li + li {
   margin-top: 0.5rem;
 }
-
 .sidebar-divider {
   height: 1px;
   background: var(--border);
   margin: 1rem 0;
 }
-
 .sidebar-subtitle {
   font-family: var(--font-mono);
   font-size: 0.7rem;
@@ -790,43 +734,23 @@ defineExpose({ spin, totalCount });
   gap: 0.4rem;
   letter-spacing: 0.05em;
 }
-
 .compact .recent-item {
   padding: 0.4rem;
 }
-
 .controls-wrapper,
 .kbd-hint-wrapper {
   display: flex;
   justify-content: center;
   width: 100%;
 }
-
-/* Ensure the controls component itself doesn't stretch unnecessarily */
 .controls-wrapper :deep(.controls) {
   margin: 0 auto;
 }
-
-/* Keep the hint inline */
-.kbd-hint {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  font-family: var(--font-mono);
-  font-size: 0.65rem;
-  color: var(--text-muted);
-  flex-wrap: wrap;
-  justify-content: center;
-  margin-top: 1rem;
-}
-
-/* Responsive */
 @media (max-width: 1024px) {
   .home-sidebar {
     display: none;
   }
 }
-
 @media (max-width: 640px) {
   .command-bar {
     flex-direction: column;

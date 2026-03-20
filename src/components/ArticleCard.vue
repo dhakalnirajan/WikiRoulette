@@ -4,21 +4,24 @@ import type { WikiSummary } from "@/types/wiki";
 
 const props = defineProps<{
   summary: WikiSummary;
-  bookmarked?: boolean; // NEW: bookmark state
+  bookmarked?: boolean;
 }>();
 
 const emit = defineEmits<{
   (e: "read"): void;
   (e: "pomodoro"): void;
-  (e: "bookmark"): void; // NEW: bookmark toggle event
+  (e: "bookmark"): void;
 }>();
 
 const copied = ref(false);
+const imageError = ref(false);
 
 const wikiUrl = computed(
   () =>
     props.summary.content_urls?.desktop?.page ??
-    `https://en.wikipedia.org/wiki/${encodeURIComponent(props.summary.title.replace(/ /g, "_"))}`,
+    `https://en.wikipedia.org/wiki/${encodeURIComponent(
+      props.summary.title.replace(/ /g, "_"),
+    )}`,
 );
 
 const paragraphs = computed(() =>
@@ -31,6 +34,10 @@ async function copyUrl() {
     copied.value = true;
     setTimeout(() => (copied.value = false), 1800);
   } catch (_) {}
+}
+
+function handleImageError() {
+  imageError.value = true;
 }
 </script>
 
@@ -69,11 +76,12 @@ async function copyUrl() {
     <!-- Body -->
     <div class="card-body">
       <img
-        v-if="summary.thumbnail"
+        v-if="summary.thumbnail && !imageError"
         :src="summary.thumbnail.source"
         :alt="summary.title"
         class="card-thumb"
         loading="lazy"
+        @error="handleImageError"
       />
       <div class="card-extract">
         <p v-for="(p, i) in paragraphs" :key="i">{{ p }}</p>
@@ -105,7 +113,6 @@ async function copyUrl() {
           </svg>
           Wikipedia ↗
         </a>
-
         <button class="footer-link" :class="{ copied }" @click="copyUrl">
           <svg
             v-if="!copied"
@@ -134,7 +141,6 @@ async function copyUrl() {
           {{ copied ? "Copied!" : "Copy URL" }}
         </button>
       </div>
-
       <div class="footer-right">
         <button
           class="pomodoro-btn"
@@ -185,7 +191,6 @@ async function copyUrl() {
   animation: cardIn 0.3s cubic-bezier(0.4, 0, 0.2, 1) both;
   position: relative;
 }
-
 @keyframes cardIn {
   from {
     opacity: 0;
@@ -196,13 +201,11 @@ async function copyUrl() {
     transform: translateY(0) scale(1);
   }
 }
-
 .card-header {
   padding: 2.2rem 2.8rem 1.8rem;
   border-bottom: 1px solid var(--border);
   position: relative;
 }
-
 .card-eyebrow {
   font-family: var(--font-mono);
   font-size: 0.62rem;
@@ -215,7 +218,6 @@ async function copyUrl() {
   gap: 0.6rem;
   justify-content: space-between;
 }
-
 .eyebrow-line {
   display: inline-block;
   width: 18px;
@@ -224,7 +226,6 @@ async function copyUrl() {
   opacity: 0.55;
   flex-shrink: 0;
 }
-
 .bookmark-btn {
   background: none;
   border: none;
@@ -238,17 +239,14 @@ async function copyUrl() {
   transition: all 0.15s;
   margin-left: auto;
 }
-
 .bookmark-btn:hover {
   color: var(--accent);
   background: var(--surface2);
 }
-
 .bookmark-btn.active {
   color: var(--accent);
   fill: var(--accent);
 }
-
 .card-title {
   font-family: var(--font-serif);
   font-size: clamp(1.7rem, 3.5vw, 2.5rem);
@@ -258,7 +256,6 @@ async function copyUrl() {
   letter-spacing: -0.02em;
   margin-bottom: 0.5rem;
 }
-
 .card-title :deep(i),
 .card-title :deep(em) {
   font-style: italic;
@@ -266,7 +263,6 @@ async function copyUrl() {
 .card-title :deep(sup) {
   font-size: 0.6em;
 }
-
 .card-description {
   font-family: var(--font-mono);
   font-size: 0.73rem;
@@ -274,12 +270,10 @@ async function copyUrl() {
   letter-spacing: 0.04em;
   margin-top: 0.3rem;
 }
-
 .card-body {
   padding: 1.8rem 2.8rem 2.2rem;
   min-height: 120px;
 }
-
 .card-thumb {
   float: right;
   margin: 0 0 1.2rem 1.8rem;
@@ -290,7 +284,6 @@ async function copyUrl() {
   border-radius: var(--radius);
   opacity: 0.92;
 }
-
 .card-extract {
   font-family: var(--font-serif);
   font-size: 0.97rem;
@@ -300,7 +293,6 @@ async function copyUrl() {
 .card-extract p + p {
   margin-top: 0.9em;
 }
-
 .card-footer {
   padding: 1rem 2.8rem;
   border-top: 1px solid var(--border);
@@ -311,13 +303,11 @@ async function copyUrl() {
   gap: 1rem;
   flex-wrap: wrap;
 }
-
 .footer-left {
   display: flex;
   align-items: center;
   gap: 1.2rem;
 }
-
 .footer-link {
   font-family: var(--font-mono);
   font-size: 0.68rem;
@@ -341,13 +331,11 @@ async function copyUrl() {
 .footer-link.copied {
   color: var(--accent);
 }
-
 .footer-right {
   display: flex;
   align-items: center;
   gap: 0.8rem;
 }
-
 .pomodoro-btn {
   font-family: var(--font-mono);
   font-size: 0.68rem;
@@ -370,7 +358,6 @@ async function copyUrl() {
   border-color: var(--accent);
   color: var(--accent);
 }
-
 .read-btn {
   font-family: var(--font-mono);
   font-size: 0.68rem;
@@ -393,7 +380,6 @@ async function copyUrl() {
   border-color: rgba(201, 168, 76, 0.55);
   color: #e8c97a;
 }
-
 @media (max-width: 640px) {
   .card-header,
   .card-body,

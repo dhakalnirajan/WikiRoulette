@@ -89,7 +89,9 @@ Start a structured learning session by clicking **Learn Mode** or pressing `L`:
 ```
 src/
 ├── assets/
-│   └── global.css          # Design tokens, wiki content styles
+│   ├── global.css               # Design tokens, wiki content styles
+│   └── sounds/                  # UI sound effects
+│       └── bell.mp3             # Pomodoro timer end sound
 ├── components/
 │   ├── AppNav.vue           # Top navigation bar
 │   ├── ArticleCard.vue      # Summary card on home view
@@ -101,6 +103,7 @@ src/
 ├── composables/
 │   ├── useArticleProcessor.ts  # Clean & process Wikipedia HTML
 │   ├── useHistory.ts           # Navigation history stack
+│   ├── useStorage.ts           # Storage
 │   └── useWikiApi.ts           # Wikipedia API fetch helpers
 ├── types/
 │   └── wiki.ts              # TypeScript types for Wikipedia API
