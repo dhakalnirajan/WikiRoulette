@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { ref, computed, onMounted, watch, onUnmounted } from "vue";
 import type { WikiSummary } from "@/types/wiki";
+import { fetchArticleHTML, cancelRequest } from "@/composables/useWikiApi";
 
 const props = defineProps<{
   summary: WikiSummary;
@@ -28,6 +29,85 @@ const paragraphs = computed(() =>
   (props.summary.extract ?? "").split("\n").filter(Boolean).slice(0, 4),
 );
 
+// ----------------------------------------------------------------------------
+// Full article reading time
+// ----------------------------------------------------------------------------
+const fullArticleWordCount = ref(0);
+const readingTimeLoading = ref(false);
+let fetchRequestKey: string | null = null;
+
+// Cache keyed by pageid (since pageid is unique per article)
+const getCacheKey = (pageid: number) => `wikiroulette:wordcount:${pageid}`;
+
+async function fetchFullArticleReadingTime() {
+  if (!props.summary.title) return;
+
+  // Check cache
+  const cacheKey = getCacheKey(props.summary.pageid);
+  const cached = localStorage.getItem(cacheKey);
+  if (cached) {
+    fullArticleWordCount.value = parseInt(cached, 10);
+    return;
+  }
+
+  // Cancel any pending request for the same article
+  if (fetchRequestKey) {
+    cancelRequest(fetchRequestKey);
+  }
+
+  readingTimeLoading.value = true;
+  fetchRequestKey = `html-${props.summary.title}`;
+
+  try {
+    const html = await fetchArticleHTML(props.summary.title);
+    // Strip HTML tags
+    const stripped = html.replace(/<[^>]*>/g, "");
+    // Count words (any sequence of letters/numbers/apostrophes/Unicode letters)
+    const matches = stripped.match(/[\w\u00C0-\u024F\u0400-\u04FF]+/g);
+    const count = matches ? matches.length : 0;
+    fullArticleWordCount.value = count;
+    localStorage.setItem(cacheKey, count.toString());
+  } catch (err) {
+    console.warn("Failed to fetch full article for reading time:", err);
+    // Fallback: use extract if full fetch fails
+    const fallbackWords = (props.summary.extract ?? "").split(/\s+/).length;
+    fullArticleWordCount.value = fallbackWords;
+  } finally {
+    readingTimeLoading.value = false;
+    fetchRequestKey = null;
+  }
+}
+
+const fullReadingTimeMinutes = computed(() => {
+  const words = fullArticleWordCount.value;
+  if (words === 0) return 0;
+  return Math.ceil(words / 200);
+});
+
+const fullReadingTimeDisplay = computed(() => {
+  const minutes = fullReadingTimeMinutes.value;
+  if (minutes === 0) return "0 min read";
+  return `${minutes} min read`;
+});
+
+// Fetch reading time when the article changes
+watch(
+  () => props.summary,
+  () => {
+    fetchFullArticleReadingTime();
+  },
+  { immediate: true },
+);
+
+onUnmounted(() => {
+  if (fetchRequestKey) {
+    cancelRequest(fetchRequestKey);
+  }
+});
+
+// ----------------------------------------------------------------------------
+// URL copy
+// ----------------------------------------------------------------------------
 async function copyUrl() {
   try {
     await navigator.clipboard.writeText(wikiUrl.value);
@@ -48,7 +128,7 @@ function handleImageError() {
       <div class="card-eyebrow">
         <span class="eyebrow-line" aria-hidden="true"></span>
         Random Article · Wikipedia
-        <!-- Bookmark button (top right) -->
+        <!-- Bookmark button -->
         <button
           class="bookmark-btn"
           :class="{ active: bookmarked }"
@@ -174,6 +254,20 @@ function handleImageError() {
           </svg>
           Read Full Article
         </button>
+      </div>
+      <div class="reading-time">
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+        >
+          <circle cx="12" cy="12" r="10" />
+          <polyline points="12 6 12 12 16 14" />
+        </svg>
+        <span v-if="readingTimeLoading" class="reading-time-loading">⏳</span>
+        <span v-else>{{ fullReadingTimeDisplay }}</span>
       </div>
     </footer>
   </article>
@@ -380,6 +474,29 @@ function handleImageError() {
   border-color: rgba(201, 168, 76, 0.55);
   color: #e8c97a;
 }
+
+.reading-time {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.reading-time-loading {
+  opacity: 0.7;
+  animation: pulse 1s infinite;
+}
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
 @media (max-width: 640px) {
   .card-header,
   .card-body,

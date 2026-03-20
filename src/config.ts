@@ -13,6 +13,7 @@ export const CACHE_TTL = 1000 * 60 * 5; // 5 minutes
 // History
 export const MAX_HISTORY_ENTRIES = 100;
 
+// Pomodoro Timings (seconds)
 export interface LearningPhase {
   round: number;
   readDuration: number;
@@ -57,3 +58,8 @@ export const STORAGE_KEYS = {
   GUIDE_VERSION: "wikiroulette:guideVersion",
   POMODORO_SESSION: "wikiroulette:pomodoroSession",
 } as const;
+
+// Recommendations
+export const RECOMMENDATIONS_CACHE_KEY = "wikiroulette:recommendations";
+export const RECOMMENDATIONS_CACHE_TTL = 1000 * 60 * 60; // 1 hour
+export const RECOMMENDATIONS_DEFAULT_LIMIT = 3;

@@ -6,12 +6,14 @@ import SpinControls from "./SpinControls.vue";
 import RecentItem from "./RecentItem.vue";
 import ShortcutsModal from "./ShortcutsModal.vue";
 import ArticleFactsCard from "./ArticleFactsCard.vue";
+import ArticleRecommendations from "./ArticleRecommendations.vue";
 import {
   fetchRandomSummary,
   fetchSummaryByTitle,
 } from "@/composables/useWikiApi";
 import { useHistory } from "@/composables/useHistory";
 import type { WikiSummary } from "@/types/wiki";
+import ErrorPage from "./ErrorPage.vue";
 
 const emit = defineEmits<{
   (e: "read", summary: WikiSummary): void;
@@ -148,6 +150,19 @@ function prev(): void {
 }
 
 // ============================================================================
+// Handle recommendation clicks
+// ============================================================================
+async function navigateToRecommendation(title: string): Promise<void> {
+  try {
+    const summary = await fetchSummaryByTitle(title);
+    emit("read", summary);
+  } catch (e) {
+    console.error("Failed to fetch recommended article:", e);
+    // Optionally show a toast notification
+  }
+}
+
+// ============================================================================
 // Keyboard shortcuts
 // ============================================================================
 function handleKeydown(e: KeyboardEvent): void {
@@ -214,6 +229,7 @@ defineExpose({
     <div class="home-layout">
       <div class="home-main">
         <div class="home-inner">
+          <!-- Search bar & stats -->
           <div class="command-bar">
             <div class="jump-container glass">
               <span class="search-icon">
@@ -257,12 +273,18 @@ defineExpose({
             </div>
           </div>
 
+          <!-- Article Card Area -->
           <div class="card-area">
             <SkeletonCard v-if="loading || jumpLoading" />
 
             <div v-else-if="errorMsg" class="error-card glass">
-              <p class="error-icon">⚠️</p>
-              <p class="error-message">{{ errorMsg }}</p>
+              <ErrorPage
+                error-title="Could not load article"
+                :error-message="errorMsg"
+                :show-retry="true"
+                @retry="load(summary)"
+                @back="$emit('back')"
+              />
               <button class="retry-btn" @click="spin">
                 <svg
                   width="14"
@@ -319,6 +341,7 @@ defineExpose({
             </div>
           </div>
 
+          <!-- Spin Controls -->
           <div class="controls-wrapper">
             <SpinControls
               :can-go-back="canGoBack"
@@ -329,6 +352,7 @@ defineExpose({
             />
           </div>
 
+          <!-- Keyboard Hint -->
           <div class="kbd-hint-wrapper">
             <div class="kbd-hint">
               <span class="hint-item"> <kbd>←</kbd> <span>Prev</span> </span>
@@ -352,6 +376,7 @@ defineExpose({
         </div>
       </div>
 
+      <!-- Sidebar -->
       <aside class="home-sidebar">
         <div class="sidebar-card glass">
           <h3 class="sidebar-title">
@@ -387,6 +412,13 @@ defineExpose({
             </li>
           </ul>
 
+          <!-- Related Articles (recommendations) for the current article -->
+          <ArticleRecommendations
+            v-if="hasSummary"
+            :article-title="current!.summary.title"
+            @navigate="navigateToRecommendation"
+          />
+
           <div v-if="bookmarks.length > 0" class="sidebar-divider"></div>
           <div v-if="bookmarks.length > 0" class="sidebar-bookmarks">
             <h4 class="sidebar-subtitle">
@@ -419,7 +451,7 @@ defineExpose({
             </ul>
           </div>
         </div>
-        <!-- Show facts about the current article if one exists -->
+        <!-- Facts about the current article -->
         <ArticleFactsCard v-if="hasSummary" :summary="current!.summary" />
       </aside>
     </div>

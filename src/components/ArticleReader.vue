@@ -12,6 +12,7 @@ import {
 import TocSidebar from "./TocSidebar.vue";
 import PomodoroLearningView from "./PomodoroLearningView.vue";
 import ArticleFacts from "./ArticleFacts.vue";
+import Recommendations from "./Recommendations.vue"; // ✅ Correct import
 import {
   fetchArticleHTML,
   htmlToObsidianMarkdown,
@@ -19,6 +20,8 @@ import {
 } from "@/composables/useWikiApi";
 import { processArticleHTML } from "@/composables/useArticleProcessor";
 import type { WikiSummary, TocItem } from "@/types/wiki";
+import { useReadingTime } from "@/composables/useReadingTime";
+import ErrorPage from "./ErrorPage.vue";
 
 const props = defineProps<{ summary: WikiSummary }>();
 const emit = defineEmits<{
@@ -42,6 +45,8 @@ const showBackToTop = ref(false);
 const isFullscreen = ref(false);
 const viewMode = ref<"html" | "markdown">("html");
 const showShortcuts = ref(false);
+
+const { readingTimeDisplay } = useReadingTime(() => processedHtml.value);
 
 let currentRequestKey: string | null = null;
 
@@ -332,6 +337,19 @@ async function copyUrl(): Promise<void> {
         </div>
 
         <div class="reader-bar-actions">
+          <div class="reading-time-badge">
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <polyline points="12 6 12 12 16 14" />
+            </svg>
+            {{ readingTimeDisplay }}
+          </div>
           <button
             class="bar-btn"
             @click="startPomodoro"
@@ -468,17 +486,13 @@ async function copyUrl(): Promise<void> {
         </div>
 
         <div v-else-if="loadingState === 'error'" class="reader-error">
-          <p class="error-headline">Could not load this article.</p>
-          <p class="error-detail">{{ errorMsg }}</p>
-          <a
-            :href="wikiUrl"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="error-link"
-          >
-            Open on Wikipedia ↗
-          </a>
-          <button class="retry-btn" @click="load(summary)">Retry</button>
+          <ErrorPage
+            error-title="Could not load article"
+            :error-message="errorMsg"
+            :show-retry="true"
+            @retry="load(summary)"
+            @back="$emit('back')"
+          />
         </div>
 
         <div v-else class="reader-layout">
@@ -503,6 +517,11 @@ async function copyUrl(): Promise<void> {
               <p v-if="summary.description" class="article-hero-desc-text">
                 {{ summary.description }}
               </p>
+              <Recommendations
+                v-if="summary.title"
+                :article-title="summary.title"
+                @navigate="emit('navigate', $event)"
+              />
             </div>
 
             <div
@@ -788,6 +807,19 @@ async function copyUrl(): Promise<void> {
   color: var(--text-muted);
   letter-spacing: 0.04em;
   margin-top: 0.3rem;
+}
+
+.reading-time-badge {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: var(--surface2);
+  padding: 0.28rem 0.7rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
 }
 
 .reader-loading,
